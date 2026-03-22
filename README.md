@@ -2,14 +2,14 @@
 
 Control Ableton Live programmatically through AI assistants using the [Model Context Protocol](https://modelcontextprotocol.io).
 
-A Swift MCP server and Python Remote Script that give AI assistants like Cursor and Claude direct access to Ableton Live's full API -- arrangement view, session view, tracks, devices, mixing, and more.
+A Python MCP server and Remote Script that give AI assistants like Cursor and Claude direct access to Ableton Live's full API -- arrangement view, session view, tracks, devices, mixing, and more.
 
 ## Architecture
 
 ```
 ┌─────────────────┐                    ┌──────────────────────┐
-│  AI Assistant    │  stdio (MCP)       │  Swift MCP Server    │
-│  (Cursor/Claude) │◄──────────────────►│  (macOS binary)      │
+│  AI Assistant    │  stdio (MCP)       │  Python MCP Server   │
+│  (Cursor/Claude) │◄──────────────────►│                      │
 └─────────────────┘                    └──────────┬───────────┘
                                                   │
                                           TCP :9877 (JSON)
@@ -28,8 +28,8 @@ A Swift MCP server and Python Remote Script that give AI assistants like Cursor 
 
 **Two independent components:**
 
-- **Swift MCP Server** -- a standalone macOS command-line tool. Speaks MCP (JSON-RPC over stdio) with AI clients and communicates with Ableton via TCP. Built with the official [Swift MCP SDK](https://github.com/modelcontextprotocol/swift-sdk).
-- **Python Remote Script** -- runs inside Ableton Live's embedded Python runtime as a ControlSurface. Receives JSON commands over TCP, executes them against the [Live Object Model](https://docs.cycling74.com/apiref/lom), and returns results.
+- **MCP Server** -- a Python process that speaks MCP (JSON-RPC over stdio) with AI clients and communicates with Ableton via TCP. Built with the official [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk).
+- **Remote Script** -- runs inside Ableton Live's embedded Python runtime as a ControlSurface. Receives JSON commands over TCP, executes them against the [Live Object Model](https://docs.cycling74.com/apiref/lom), and returns results.
 
 ## Features
 
@@ -63,43 +63,40 @@ A Swift MCP server and Python Remote Script that give AI assistants like Cursor 
 
 ## Requirements
 
-- macOS 14+ (Sonoma or later)
-- Swift 6.0+ (Xcode 16+)
+- Python 3.10+
 - Ableton Live 12 (any edition)
+- macOS or Windows
 - Cursor IDE or Claude Desktop
 
 ## Project Structure
 
 ```
 AbletonMCP/
-  Package.swift                         -- Swift package manifest
-  Sources/
-    AbletonMCP/
-      main.swift                        -- entry point
-      Server/
-        AbletonMCPServer.swift          -- MCP server setup, tool registration
-      Connection/
-        AbletonConnection.swift         -- async TCP client
-        MessageProtocol.swift           -- typed request/response models
-      Tools/
-        SessionTools.swift              -- transport, tempo, time signature
-        TrackTools.swift                -- track CRUD and properties
-        ClipTools.swift                 -- arrangement + session clips
-        DeviceTools.swift               -- devices and parameters
-        SceneTools.swift                -- scene management
-        BrowserTools.swift              -- browser navigation and loading
-        MixerTools.swift                -- volume, pan, sends
-  Tests/
-    AbletonMCPTests/
-      ConnectionTests.swift
-      MessageProtocolTests.swift
-      ToolTests/
-  RemoteScript/
+  pyproject.toml                        -- Python package manifest
+  src/
+    ableton_mcp/
+      __init__.py
+      server.py                         -- MCP server setup, tool registration
+      connection.py                     -- async TCP client
+      protocol.py                       -- typed request/response models
+      tools/
+        session.py                      -- transport, tempo, time signature
+        track.py                        -- track CRUD and properties
+        clip.py                         -- arrangement + session clips
+        device.py                       -- devices and parameters
+        scene.py                        -- scene management
+        browser.py                      -- browser navigation and loading
+        mixer.py                        -- volume, pan, sends
+  tests/
+    test_connection.py
+    test_protocol.py
+    tools/
+  remote_script/
     AbletonMCP/
       __init__.py                       -- Ableton Remote Script
   docs/
     installation.md
-    api-reference.md
+    decisions/
 ```
 
 ## Installation
@@ -108,14 +105,14 @@ AbletonMCP/
 
 ### Quick Start
 
-1. **Build the Swift server:**
+1. **Install the MCP server:**
    ```bash
-   swift build -c release
+   pip install ableton-mcp
    ```
 
 2. **Install the Remote Script** into Ableton's User Library:
    ```bash
-   cp -r RemoteScript/AbletonMCP ~/Music/Ableton/User\ Library/Remote\ Scripts/
+   cp -r remote_script/AbletonMCP ~/Music/Ableton/User\ Library/Remote\ Scripts/
    ```
 
 3. **Configure Ableton:** Preferences > Link, Tempo & MIDI > set Control Surface to "AbletonMCP", Input/Output to "None".
@@ -125,7 +122,7 @@ AbletonMCP/
    {
      "mcpServers": {
        "AbletonMCP": {
-         "command": "/path/to/AbletonMCP/.build/release/AbletonMCP"
+         "command": "ableton-mcp"
        }
      }
    }
@@ -136,15 +133,15 @@ AbletonMCP/
 ## Design Principles
 
 - **Arrangement-first** -- most producers work in arrangement view. It's a first-class citizen, not an afterthought.
-- **Typed protocol** -- the JSON protocol between Swift server and Python script uses strongly typed models on both sides. No stringly-typed command construction.
+- **Typed protocol** -- the JSON protocol between MCP server and Remote Script uses Pydantic models. No stringly-typed command construction.
 - **Registry pattern** -- tools are registered declaratively, not routed through if/elif chains.
-- **Async native** -- the Swift server uses Swift concurrency throughout. No blocking I/O.
+- **Async native** -- the MCP server uses asyncio throughout. No blocking I/O.
 - **Comprehensive coverage** -- targeting the full Live Object Model, not just the basics.
 
 ## Roadmap
 
 ### Phase 1 -- Core (current)
-- Communication layer (Swift TCP client, Python TCP server)
+- Communication layer (TCP client/server)
 - Session/transport control
 - Track management
 - Arrangement + session clip creation with notes
@@ -167,10 +164,10 @@ AbletonMCP/
 
 ## Tech Stack
 
-- **Server:** Swift 6, [modelcontextprotocol/swift-sdk](https://github.com/modelcontextprotocol/swift-sdk), Swift NIO (TCP)
+- **MCP Server:** Python 3.10+, [modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk), Pydantic
 - **Remote Script:** Python 3 (Ableton's embedded runtime), `_Framework.ControlSurface`
 - **Protocol:** JSON over TCP (port 9877)
-- **CI:** GitHub Actions (macOS runner)
+- **CI:** GitHub Actions
 
 ## License
 
