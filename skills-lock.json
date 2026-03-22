@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "ableton-lom": {
+      "source": "mikecfisher/ableton-lom-skill",
+      "sourceType": "github",
+      "computedHash": "f88ad2a208f3696b64dafa2216515bdb728dfb8d541dd68a86214fc4db719a8a"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "computedHash": "d31e234f0c90694a670222cdd1dafa853e051d7066beda389f1097c22dadd461"
+    },
+    "python-mcp-server-generator": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "2b598920b5fdc807c9ee5b69bad23b8327c4ea5f1178c38d3a99a9e06a49e628"
+    },
+    "python-project-structure": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "2f4f560964af8ecad4d54666c044baa54671d0abd1136c848b539befe24db170"
+    }
+  }
+}
