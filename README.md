@@ -112,7 +112,7 @@ AbletonMCP/
 
 2. **Install the Remote Script** into Ableton's User Library:
    ```bash
-   cp -r remote_script/AbletonMCP ~/Music/Ableton/User\ Library/Remote\ Scripts/
+   cp -r remote_script/AbletonMCP/ ~/Music/Ableton/User\ Library/Remote\ Scripts/
    ```
 
 3. **Configure Ableton:** Preferences > Link, Tempo & MIDI > set Control Surface to "AbletonMCP", Input/Output to "None".

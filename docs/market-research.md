@@ -167,7 +167,7 @@ No description. Single day of activity (February 20, 2026).
 | **REST API** | No | No | Yes | No | No (MCP-focused) |
 | **Max for Live device** | No | No | Yes | No | No |
 | **ElevenLabs integration** | No | Yes | No | No | No |
-| **Language** | Python | Python | Python | TypeScript | **Swift** |
+| **Language** | Python | Python | Python | TypeScript | **Python** |
 | **Tests** | None | None | Exists (empty) | Unknown | Yes |
 | **CI/CD** | None | None | None | None | GitHub Actions |
 | **Architecture** | Monolithic | Monolithic | Monolithic (huge) | Modular | **Registry + typed protocol** |
@@ -185,9 +185,7 @@ No description. Single day of activity (February 20, 2026).
 
 3. **Active maintenance.** No project in this space is actively maintained with community engagement. The original has 2,300 stars and 14 open PRs gathering dust. This is a significant opportunity.
 
-4. **Non-Python implementation.** Every single project is Python. A Swift implementation would be unique and signal engineering quality.
-
-5. **Proper documentation.** Most projects have setup-focused READMEs but no API reference, architecture docs, or contribution guides that actually work.
+4. **Proper documentation.** Most projects have setup-focused READMEs but no API reference, architecture docs, or contribution guides that actually work.
 
 ### What the community is asking for
 
@@ -220,21 +218,18 @@ The risk is low but worth monitoring. If it gains users and proves reliable, it 
 
 ### Differentiators
 
-1. **Swift.** The only non-Python Ableton MCP server. Signals engineering quality, attracts Swift/Apple developer community, demonstrates the protocol is language-agnostic.
+1. **Arrangement-first.** Every competitor treats session view as primary. We make arrangement view a first-class citizen -- matching how most producers actually work.
 
-2. **Arrangement-first.** Every competitor treats session view as primary. We make arrangement view a first-class citizen -- matching how most producers actually work.
+2. **Architecture quality.** Typed message protocol (Pydantic), command registry pattern, async-native, proper error types. A codebase people can actually contribute to.
 
-3. **Architecture quality.** Typed message protocol, command registry pattern, async-native, proper error types. A codebase people can actually contribute to.
+3. **Active maintenance.** Responsive to issues, review PRs, publish releases. The bar is incredibly low -- just showing up consistently would be a differentiator.
 
-4. **Active maintenance.** Responsive to issues, review PRs, publish releases. The bar is incredibly low -- just showing up consistently would be a differentiator.
-
-5. **Test coverage.** Unit tests with mock Ableton responses. CI on every push. None of the competitors have this.
+4. **Test coverage.** Unit tests with mock Ableton responses. CI on every push. None of the competitors have this.
 
 ### Target audience
 
 - Producers who work primarily in arrangement view
 - Developers interested in MCP integrations
-- Swift developers looking for interesting open-source projects
 - Users frustrated with abandoned alternatives
 
 ### Success metrics

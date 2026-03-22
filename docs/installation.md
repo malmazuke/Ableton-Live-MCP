@@ -4,19 +4,26 @@
 
 ## Prerequisites
 
-- macOS 14+ (Sonoma or later)
-- Swift 6.0+ (Xcode 16+)
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - Ableton Live 12 (any edition)
+- macOS or Windows
 - Cursor IDE or Claude Desktop
 
 ## Steps
 
-### 1. Build the Swift Server
+### 1. Install the MCP Server
+
+```bash
+pip install ableton-mcp
+```
+
+Or for development:
 
 ```bash
 git clone git@github.com:malmazuke/AbletonMCP.git
 cd AbletonMCP
-swift build -c release
+uv sync
 ```
 
 ### 2. Install the Remote Script
@@ -24,7 +31,7 @@ swift build -c release
 Copy the Remote Script into Ableton's User Library:
 
 ```bash
-cp -r RemoteScript/AbletonMCP ~/Music/Ableton/User\ Library/Remote\ Scripts/
+cp -r remote_script/AbletonMCP ~/Music/Ableton/User\ Library/Remote\ Scripts/
 ```
 
 ### 3. Configure Ableton Live
@@ -47,7 +54,7 @@ Add to your MCP config (Settings > MCP):
 {
   "mcpServers": {
     "AbletonMCP": {
-      "command": "/path/to/AbletonMCP/.build/release/AbletonMCP"
+      "command": "ableton-mcp"
     }
   }
 }
@@ -61,7 +68,7 @@ Edit your Claude config file:
 {
   "mcpServers": {
     "AbletonMCP": {
-      "command": "/path/to/AbletonMCP/.build/release/AbletonMCP"
+      "command": "ableton-mcp"
     }
   }
 }
