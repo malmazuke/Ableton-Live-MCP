@@ -119,6 +119,83 @@ The most architecturally sophisticated project despite being the smallest. Cross
 
 ---
 
+## Part 1b: Community Demand Analysis
+
+Systematic review of GitHub issues and unmerged PRs across competitor repos reveals clear demand signals. These represent real users trying (and failing) to get features added to abandoned projects.
+
+### ahujasid/ableton-mcp: 28 open issues, 14 open PRs
+
+**Feature requests (issues):**
+
+| Issue | Title | Signal |
+|-------|-------|--------|
+| #13 | Arrangement view | Most requested feature. User describes the exact pain: clips created in session but no way to move to arrangement. Open since Mar 2025. |
+| #35 | Read MIDI notes from existing clips | Detailed proposal with use cases: musical continuity, style analysis, intelligent variations. Open since Jun 2025. |
+| #7 | Modify instrument/effect/VST parameters | "Adds the instrument but can't change its parameters." Community confirms it's doable via LOM. Open since Mar 2025. |
+| #59 | Create Export method | Export functionality. Open since Feb 2026. |
+| #19 | Ollama Integration | Local LLM support. Multiple users discuss workarounds (Open WebUI, mcpo adapter, OpenRouter). Open since Apr 2025. |
+| #31 | "Hope to see new updates and new functions!" | User frustration with abandonment. Open since May 2025. |
+| #14 | Claude hasn't access to samples through the browser | Browser navigation doesn't find samples/user content. Open since Apr 2025. |
+| #79 | VST3 third-party plugins fail to load | URI-based loading doesn't work for third-party VST3s. Open since Mar 2026. |
+| #58 | set_clip_follow_actions returns success but doesn't persist | Follow action writes silently fail. Open since Feb 2026. |
+| #27 | Problems creating beats or melodies | General reliability complaints. Open since May 2025. |
+
+**Unmerged PRs with real feature work:**
+
+| PR | Title | What it adds | Status |
+|----|-------|-------------|--------|
+| #82 | Arrangement View: full timeline workflow | `switch_to_arrangement_view`, `set_arrangement_time`, `get_arrangement_clips`, `duplicate_to_arrangement`. Uses `duplicate_clip_to_arrangement` (Live 11+ API). | Open, Mar 2026 |
+| #73 | Read MIDI notes from existing clips | `get_notes_from_clip` returning pitch/start_time/duration/velocity/mute | Open, Feb 2026 |
+| #54 | Read MIDI notes from clips | Same feature, different contributor | Open, Jan 2026 |
+| #55 | ASCII grid notation for MIDI patterns | `clip_to_grid`, `grid_to_clip` — human-readable drum pattern format (`KK\|o---o---\|`) | Open, Jan 2026 |
+| #67 | Rack device introspection | `get_rack_device_info` with chain summaries, nested rack serialization | Open, Feb 2026 |
+| #63 | Refactor: split into handlers/ and tools/ | Modular architecture matching our planned structure. 43 tools across 10 domain modules. | Open, Feb 2026 |
+| #52 | Comprehensive controls for tracks, clips, scenes, devices | 60+ new methods, recording, arrangement, audio analysis | Open, Dec 2025 |
+| #50 | Rack chain tools and type safety | Audio Effect Rack, chain creation, load effect to chain, master track effects | Open, Nov 2025 |
+| #41 | Device parameter control | `get_device_parameters`, `set_device_parameter`, scene management, automation, sends/returns | Open, Aug 2025 |
+
+**Key insight:** Two separate contributors independently submitted "read MIDI notes" PRs (#54 and #73). Combined with the detailed feature request (#35), this is the single most wanted missing feature after arrangement view.
+
+### uisato/ableton-mcp-extended: 3 issues, 4 PRs
+
+Smaller community but same pain points:
+
+| PR | Title | What it adds | Status |
+|----|-------|-------------|--------|
+| #9 | Audio track import (WAV → Session + Arrangement) | `create_audio_track`, `load_audio_clip`, `place_clip_in_arrangement`. Discovered Ableton 12 API signature change for `create_audio_clip`. | Closed unmerged |
+| #10 | Mixer control and device parameter automation | `set_track_volume/panning`, `get/set_device_parameters`, `get_master_meter` | Closed unmerged |
+| #6 | Advanced Clip Management & Device Parameter Control | `clear_clip`, `delete_clip`, `remove_notes_from_clip`, `get/set_device_parameters` | Open |
+| #8 | Fix macOS installation + docs | 5,258 additions — comprehensive documentation overhaul | Open |
+
+Issues are mostly setup/installation problems (#1, #2) and a ClyphX Pro integration question (#3).
+
+### jpoindexter/ableton-mcp and ptaczek/daw-mcp
+
+Zero issues, zero PRs on both. No community engagement means no demand signals, but also no users to learn from.
+
+### Demand signal summary (ranked by frequency and intensity)
+
+| Rank | Feature | Evidence | Our Phase |
+|------|---------|----------|-----------|
+| 1 | **Arrangement view** | Issue #13, PR #82, PR #52 (ahujasid); PR #9 (uisato) | **Phase 1** |
+| 2 | **Read MIDI notes from clips** | Issue #35, PR #54, PR #73 (ahujasid) — 3 independent efforts | **Phase 1** |
+| 3 | **Device parameter control** | Issue #7, PR #41, PR #52 (ahujasid); PR #6, PR #10 (uisato) | **Phase 1** |
+| 4 | **Modular architecture / refactoring** | PR #63 (ahujasid) — exact same structure we're planning | Phase 1 (built in) |
+| 5 | **Audio track creation + import** | PR #52 (ahujasid); PR #9 (uisato) | Phase 2 |
+| 6 | **Rack device introspection** | PR #67, PR #50 (ahujasid) | Phase 2 |
+| 7 | **Scene management** | PR #41, PR #52 (ahujasid) | Phase 2 |
+| 8 | **Mixer (volume, pan, sends, returns)** | PR #10 (uisato); PR #52 (ahujasid) | Phase 1 (basic), Phase 2 (sends/returns) |
+| 9 | **Clip management (delete, clear)** | PR #6 (uisato) | Phase 1 |
+| 10 | **Automation / envelopes** | PR #41 (ahujasid) | Phase 2 |
+| 11 | **Ollama / local LLM support** | Issue #19 (ahujasid) — 4 commenters with workarounds | Out of scope (MCP is LLM-agnostic) |
+| 12 | **VST3 plugin loading** | Issue #79 (ahujasid) | Phase 1 (browser/load tools) |
+| 13 | **Export** | Issue #59 (ahujasid) | Phase 3 |
+| 14 | **ASCII grid notation** | PR #55 (ahujasid) — creative but niche | Consider post-v1 |
+
+**Validation:** Our Phase 1 tool list (37 tools) covers the top 4 community requests plus basic mixer. The top 3 requests — arrangement view, read MIDI notes, device parameters — are all Phase 1 features that no competitor has shipped. This confirms our prioritization.
+
+---
+
 ## Part 2: Architectural Patterns
 
 ### What to adopt
