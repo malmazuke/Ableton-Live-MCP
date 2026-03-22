@@ -237,3 +237,15 @@ The risk is low but worth monitoring. If it gains users and proves reliable, it 
 - Match the original's feature set within Phase 1 (session + arrangement + tracks + devices)
 - First release with passing CI and documented API
 - Engagement: respond to issues within 48 hours, review PRs within a week
+
+---
+
+## Investigation Output
+
+A deep investigation of all four competitor codebases was completed on 2026-03-22. The full analysis — including every tool/command cataloged, architectural patterns evaluated, and the definitive phased tool roadmap — is documented in [ADR-002: Competitor Analysis and Definitive Tool Roadmap](decisions/002-competitor-analysis-and-tool-roadmap.md).
+
+Key findings:
+- **37 tools defined for Phase 1** covering transport, tracks, clips, notes, devices, browser, and mixing
+- **Architectural patterns adopted**: batch-first API, lean note format, newline-delimited JSON framing, typed protocol (all absent in competitors)
+- **No competitor has**: arrangement view + device parameters + tests — we will be the first
+- **All 4 competitors are abandoned or barely maintained** — active maintenance alone is a differentiator
