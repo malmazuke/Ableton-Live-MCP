@@ -140,27 +140,11 @@ AbletonMCP/
 
 ## Roadmap
 
-### Phase 1 -- Core (current)
-- Communication layer (TCP client/server)
-- Session/transport control
-- Track management
-- Arrangement + session clip creation with notes
-- Device parameter control
+See the [AbletonMCP Roadmap](https://github.com/users/malmazuke/projects/1) project board for current status and planned work.
 
-### Phase 2 -- Extended
-- Scene management
-- Browser navigation and instrument loading
-- Audio file import
-- Mixer (sends, returns, crossfader)
-- Automation envelopes
-
-### Phase 3 -- Advanced
-- Input/output routing configuration
-- Group tracks and folding
-- Take lanes
-- Cue points / locators
-- Groove pool
-- Undo/redo
+**Phase 1 -- Core:** Communication layer, transport, tracks, arrangement + session clips, devices.
+**Phase 2 -- Extended:** Scenes, browser, audio import, mixer, automation.
+**Phase 3 -- Advanced:** Routing, group tracks, take lanes, locators, groove pool, undo/redo.
 
 ## Tech Stack
 
