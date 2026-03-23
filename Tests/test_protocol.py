@@ -5,7 +5,13 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from mcp_ableton.protocol import CommandRequest, CommandResponse, ErrorDetail
+from mcp_ableton.protocol import (
+    CommandError,
+    CommandRequest,
+    CommandResponse,
+    ErrorCode,
+    ErrorDetail,
+)
 
 
 class TestCommandRequest:
@@ -138,3 +144,45 @@ class TestCommandResponse:
     def test_missing_id_raises(self) -> None:
         with pytest.raises(ValidationError):
             CommandResponse.model_validate({"status": "ok"})
+
+    def test_raise_on_error_ok_is_noop(self) -> None:
+        resp = CommandResponse(status="ok", result={"tempo": 120.0}, id="ok-roe")
+        resp.raise_on_error()
+
+    def test_raise_on_error_with_detail(self) -> None:
+        resp = CommandResponse(
+            status="error",
+            id="err-roe",
+            error=ErrorDetail(
+                code=ErrorCode.NOT_FOUND, message="Track 99 does not exist"
+            ),
+        )
+        with pytest.raises(CommandError, match="NOT_FOUND.*Track 99") as exc_info:
+            resp.raise_on_error()
+        assert exc_info.value.code == ErrorCode.NOT_FOUND
+
+    def test_raise_on_error_without_detail(self) -> None:
+        resp = CommandResponse(status="error", id="err-nodet")
+        with pytest.raises(CommandError, match="INTERNAL_ERROR.*Unknown error"):
+            resp.raise_on_error()
+
+
+class TestErrorCode:
+    def test_all_codes_are_strings(self) -> None:
+        for code in ErrorCode:
+            assert isinstance(code, str)
+            assert code == code.value
+
+    def test_expected_codes_exist(self) -> None:
+        expected = {
+            "UNKNOWN_COMMAND",
+            "INVALID_PARAMS",
+            "INTERNAL_ERROR",
+            "NOT_FOUND",
+            "NOT_CONNECTED",
+        }
+        assert {c.value for c in ErrorCode} == expected
+
+    def test_codes_usable_in_error_detail(self) -> None:
+        err = ErrorDetail(code=ErrorCode.INVALID_PARAMS, message="bad tempo")
+        assert err.code == "INVALID_PARAMS"
