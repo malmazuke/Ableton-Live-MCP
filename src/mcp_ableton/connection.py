@@ -44,10 +44,16 @@ class AbletonConnection:
     async def connect(self) -> None:
         """Open a TCP connection to the Remote Script."""
         logger.info("Connecting to Ableton at %s:%d", self.host, self.port)
-        self._reader, self._writer = await asyncio.wait_for(
-            asyncio.open_connection(self.host, self.port),
-            timeout=self.timeout,
-        )
+        try:
+            self._reader, self._writer = await asyncio.wait_for(
+                asyncio.open_connection(self.host, self.port),
+                timeout=self.timeout,
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError(
+                f"Could not connect to Ableton at {self.host}:{self.port} "
+                f"within {self.timeout}s"
+            ) from None
         logger.info("Connected to Ableton at %s:%d", self.host, self.port)
 
     async def disconnect(self) -> None:
@@ -73,10 +79,16 @@ class AbletonConnection:
         self._writer.write(request.to_line())
         await self._writer.drain()
 
-        raw_line = await asyncio.wait_for(
-            self._reader.readuntil(b"\n"),
-            timeout=self.timeout,
-        )
+        try:
+            raw_line = await asyncio.wait_for(
+                self._reader.readuntil(b"\n"),
+                timeout=self.timeout,
+            )
+        except asyncio.TimeoutError:
+            # Python 3.10: asyncio.TimeoutError != builtins.TimeoutError
+            raise TimeoutError(
+                f"No response from Ableton within {self.timeout}s"
+            ) from None
         return CommandResponse.from_line(raw_line)
 
 
