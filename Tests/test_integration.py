@@ -8,9 +8,7 @@ remote_script sys.path setup live in conftest.py.
 
 from __future__ import annotations
 
-import socket
 import threading
-import time
 
 import pytest
 from AbletonLiveMCP.dispatcher import Dispatcher
@@ -31,42 +29,24 @@ class _EchoHandler:
 
 @pytest.fixture
 def tcp_server():
-    """Start a real TcpServer in a background thread on a random port.
-
-    We use port 0 to let the OS assign a free port, but the current
-    TcpServer API takes a fixed port.  To avoid conflicts we pick an
-    ephemeral port up front.
-    """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    sock.close()
-
+    """Start a real TcpServer in a background thread on an OS-assigned port."""
     cs = _FakeControlSurface()
     dispatcher = Dispatcher(cs)
     dispatcher.register("session", _EchoHandler())
 
-    logs = []
+    logs: list[str] = []
     server = TcpServer(
         dispatcher=dispatcher,
         log_fn=lambda msg: logs.append(msg),
         host="127.0.0.1",
-        port=port,
+        port=0,
     )
 
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    server.wait_until_ready()
 
-    # Wait for the server to start listening
-    for _ in range(50):
-        try:
-            probe = socket.create_connection(("127.0.0.1", port), timeout=0.1)
-            probe.close()
-            break
-        except OSError:
-            time.sleep(0.05)
-
-    yield port, server, logs
+    yield server.port, server, logs
 
     server.shutdown()
     thread.join(timeout=3)

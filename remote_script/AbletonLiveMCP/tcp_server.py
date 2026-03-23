@@ -31,6 +31,22 @@ class TcpServer:
         self._server_socket = None
         self._running = False
         self._client_threads = []
+        self._ready = threading.Event()
+
+    @property
+    def port(self):
+        """Return the actual port the server is bound to.
+
+        Useful when constructed with ``port=0`` to let the OS pick a port.
+        """
+        if self._server_socket:
+            return self._server_socket.getsockname()[1]
+        return self._port
+
+    def wait_until_ready(self, timeout=5.0):
+        """Block until the server is listening or *timeout* seconds elapse."""
+        if not self._ready.wait(timeout):
+            raise RuntimeError("TcpServer did not become ready in time")
 
     def serve_forever(self):
         """Accept connections in a loop until :meth:`shutdown` is called."""
@@ -40,7 +56,8 @@ class TcpServer:
         self._server_socket.bind((self._host, self._port))
         self._server_socket.listen(5)
         self._running = True
-        self._log(f"AbletonLiveMCP TCP server listening on {self._host}:{self._port}")
+        self._ready.set()
+        self._log(f"AbletonLiveMCP TCP server listening on {self._host}:{self.port}")
 
         while self._running:
             try:

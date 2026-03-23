@@ -129,8 +129,14 @@ class TestResponseShape:
 class TestCreateInstance:
     """Ableton calls create_instance(c_instance) to load a Remote Script."""
 
-    def test_returns_control_surface(self) -> None:
+    def test_returns_control_surface(self, monkeypatch) -> None:
+        import AbletonLiveMCP as alm_pkg
         from AbletonLiveMCP import AbletonLiveMCP
+
+        monkeypatch.setattr(alm_pkg, "TCP_PORT", 0)
 
         instance = create_instance(_FakeControlSurface())
         assert isinstance(instance, AbletonLiveMCP)
+
+        instance._tcp_server.shutdown()
+        instance._server_thread.join(timeout=3)
