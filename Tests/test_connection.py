@@ -170,20 +170,20 @@ class TestAutoReconnect:
             resp2 = await conn.send_command(req2)
             assert resp2.status == "ok"
             assert resp2.result == {"echo": "test.after_drop"}
-
-        await conn.disconnect()
+            await conn.disconnect()
 
     async def test_reconnect_failure_raises(self, echo_server) -> None:
         """If reconnect also fails, ConnectionError is raised."""
         server, port = await echo_server()
         conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
         await conn.connect()
-        server.close()
-        await server.wait_closed()
 
         if conn._writer:
             conn._writer.close()
             await conn._writer.wait_closed()
+
+        server.close()
+        await server.wait_closed()
 
         req = CommandRequest(command="test.fail", id="rc-fail")
         with pytest.raises(ConnectionError, match="Reconnect.*failed"):
