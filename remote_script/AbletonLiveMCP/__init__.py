@@ -16,6 +16,11 @@ TCP_HOST = "127.0.0.1"
 TCP_PORT = 9877
 
 
+def create_instance(c_instance):
+    """Entry point called by Ableton Live to instantiate the Remote Script."""
+    return AbletonLiveMCP(c_instance)
+
+
 class AbletonLiveMCP(ControlSurface):
     """MCP Remote Script entry point loaded by Ableton Live."""
 
@@ -40,6 +45,7 @@ class AbletonLiveMCP(ControlSurface):
         self._server_thread.start()
 
         self.log_message("AbletonLiveMCP: ready")
+        self.show_message(f"AbletonLiveMCP: listening on port {TCP_PORT}")
 
     def _register_handlers(self):
         """Register command handlers with the dispatcher.

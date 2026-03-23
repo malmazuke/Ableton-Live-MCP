@@ -38,7 +38,7 @@ class TcpServer:
         self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._server_socket.settimeout(1.0)
         self._server_socket.bind((self._host, self._port))
-        self._server_socket.listen(1)
+        self._server_socket.listen(5)
         self._running = True
         self._log(f"AbletonLiveMCP TCP server listening on {self._host}:{self._port}")
 
@@ -51,6 +51,7 @@ class TcpServer:
                     args=(client_socket, address),
                     daemon=True,
                 )
+                self._client_threads = [t for t in self._client_threads if t.is_alive()]
                 self._client_threads.append(thread)
                 thread.start()
             except TimeoutError:
