@@ -1,4 +1,4 @@
-# AbletonMCP
+# Ableton Live MCP
 
 Control Ableton Live programmatically through AI assistants using the [Model Context Protocol](https://modelcontextprotocol.io).
 
@@ -71,10 +71,10 @@ A Python MCP server and Remote Script that give AI assistants like Cursor and Cl
 ## Project Structure
 
 ```
-AbletonMCP/
+mcp-ableton/
   pyproject.toml                        -- Python package manifest
   src/
-    ableton_mcp/
+    mcp_ableton/
       __init__.py
       server.py                         -- MCP server setup, tool registration
       connection.py                     -- async TCP client
@@ -92,7 +92,7 @@ AbletonMCP/
     test_protocol.py
     tools/
   remote_script/
-    AbletonMCP/
+    AbletonLiveMCP/
       __init__.py                       -- Ableton Remote Script
   docs/
     installation.md
@@ -107,22 +107,22 @@ AbletonMCP/
 
 1. **Install the MCP server:**
    ```bash
-   pip install ableton-mcp
+   pip install mcp-ableton
    ```
 
 2. **Install the Remote Script** into Ableton's User Library:
    ```bash
-   cp -r remote_script/AbletonMCP/ ~/Music/Ableton/User\ Library/Remote\ Scripts/
+   cp -r remote_script/AbletonLiveMCP/ ~/Music/Ableton/User\ Library/Remote\ Scripts/
    ```
 
-3. **Configure Ableton:** Preferences > Link, Tempo & MIDI > set Control Surface to "AbletonMCP", Input/Output to "None".
+3. **Configure Ableton:** Preferences > Link, Tempo & MIDI > set Control Surface to "AbletonLiveMCP", Input/Output to "None".
 
 4. **Add to Cursor:** Settings > MCP > add server:
    ```json
    {
      "mcpServers": {
-       "AbletonMCP": {
-         "command": "ableton-mcp"
+       "AbletonLiveMCP": {
+         "command": "mcp-ableton"
        }
      }
    }
@@ -140,7 +140,7 @@ AbletonMCP/
 
 ## Roadmap
 
-See the [AbletonMCP Roadmap](https://github.com/users/malmazuke/projects/1) project board for current status and planned work.
+See the [Ableton Live MCP Roadmap](https://github.com/users/malmazuke/projects/1) project board for current status and planned work.
 
 **Phase 1 -- Core:** Communication layer, transport, tracks, arrangement + session clips, devices.
 **Phase 2 -- Extended:** Scenes, browser, audio import, mixer, automation.

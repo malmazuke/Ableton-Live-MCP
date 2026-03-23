@@ -30,7 +30,7 @@ What actually happened. Include error messages, logs, or screenshots if availabl
 - **Ableton Live version:** (e.g., Live 12.1)
 - **Python version:** (e.g., 3.12.2)
 - **AI client:** (e.g., Cursor 0.48, Claude Desktop 1.2)
-- **AbletonMCP version:** (e.g., 0.1.0 or commit hash)
+- **Ableton Live MCP version:** (e.g., 0.1.0 or commit hash)
 
 ## Additional context
 

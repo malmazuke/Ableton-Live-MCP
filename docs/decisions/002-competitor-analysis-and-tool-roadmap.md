@@ -5,7 +5,7 @@
 
 ## Context
 
-Before implementing our MCP server, we need to understand what existing Ableton MCP servers offer, what patterns work, and what our tool surface should look like. This ADR captures a deep investigation of four competing projects and defines the implementation-ready tool list for AbletonMCP.
+Before implementing our MCP server, we need to understand what existing Ableton MCP servers offer, what patterns work, and what our tool surface should look like. This ADR captures a deep investigation of four competing projects and defines the implementation-ready tool list for Ableton Live MCP.
 
 ## Projects Analyzed
 
@@ -457,7 +457,7 @@ Each MCP tool maps to exactly one Remote Script command. The Remote Script organ
 ### Handler structure
 
 ```
-remote_script/AbletonMCP/
+remote_script/AbletonLiveMCP/
 ├── __init__.py          # ControlSurface, TCP server, main-thread scheduling
 ├── dispatcher.py        # Routes "category.action" → handler method
 ├── handlers/
@@ -505,7 +505,7 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 
 ### Why we will win
 
-| Dimension | Competitors | AbletonMCP |
+| Dimension | Competitors | Ableton Live MCP |
 |-----------|------------|------------|
 | Architecture | 1-3 monolithic files, if/elif dispatch | Modular packages, typed registry |
 | Protocol | Raw dict construction, string command types | Pydantic models, typed commands |

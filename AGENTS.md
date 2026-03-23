@@ -2,12 +2,12 @@
 
 ## Project overview
 
-AbletonMCP is a Python MCP server and Ableton Live Remote Script that gives AI assistants direct access to Ableton Live's full API via the Live Object Model.
+Ableton Live MCP is a Python MCP server and Ableton Live Remote Script that gives AI assistants direct access to Ableton Live's full API via the Live Object Model.
 
 **Two components, one language (Python):**
 
-- **MCP Server** (`src/ableton_mcp/`) — speaks MCP (JSON-RPC over stdio) with AI clients, forwards commands to Ableton over TCP. Built with the [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk) and Pydantic.
-- **Remote Script** (`remote_script/AbletonMCP/`) — runs inside Ableton Live's embedded Python runtime as a `_Framework.ControlSurface`. Receives JSON commands over TCP :9877, executes against the Live Object Model, returns results.
+- **MCP Server** (`src/mcp_ableton/`) — speaks MCP (JSON-RPC over stdio) with AI clients, forwards commands to Ableton over TCP. Built with the [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk) and Pydantic.
+- **Remote Script** (`remote_script/AbletonLiveMCP/`) — runs inside Ableton Live's embedded Python runtime as a `_Framework.ControlSurface`. Receives JSON commands over TCP :9877, executes against the Live Object Model, returns results.
 
 **Tech stack:** Python 3.10+, `mcp` SDK (FastMCP), Pydantic, asyncio, `uv` for packaging.
 
@@ -16,10 +16,10 @@ AbletonMCP is a Python MCP server and Ableton Live Remote Script that gives AI a
 > This is the target layout. Some files/directories may not exist yet — create them as needed following this structure.
 
 ```
-AbletonMCP/
+mcp-ableton/
   pyproject.toml
   src/
-    ableton_mcp/
+    mcp_ableton/
       __init__.py
       server.py              # MCP server setup, tool registration
       connection.py          # async TCP client
@@ -37,7 +37,7 @@ AbletonMCP/
     test_protocol.py
     tools/
   remote_script/
-    AbletonMCP/
+    AbletonLiveMCP/
       __init__.py            # Ableton ControlSurface Remote Script
   docs/
     installation.md
@@ -52,7 +52,7 @@ uv sync                              # install all dependencies
 uv add <package>                     # add a new dependency
 
 # Run the MCP server (stdio transport)
-uv run ableton-mcp
+uv run mcp-ableton
 
 # Testing
 uv run pytest                        # run all tests
@@ -66,7 +66,7 @@ uv run ruff format .                 # format
 uv run mypy src/                     # type check
 
 # MCP development
-uv run mcp dev src/ableton_mcp/server.py  # test with MCP Inspector
+uv run mcp dev src/mcp_ableton/server.py  # test with MCP Inspector
 ```
 
 ## Code style
@@ -76,7 +76,7 @@ uv run mcp dev src/ableton_mcp/server.py  # test with MCP Inspector
 - **Type hints everywhere.** All function signatures must have parameter and return type annotations. Use Pydantic models for structured data, not raw dicts.
 - **Async by default.** The MCP server is async-native. Use `async def` for I/O-bound operations.
 - **Naming:** `snake_case` for functions/variables, `PascalCase` for classes, `UPPER_SNAKE_CASE` for constants. Match class names to file names (`TrackService` in `track_service.py`).
-- **Imports:** absolute imports only (`from ableton_mcp.protocol import ...`, never relative).
+- **Imports:** absolute imports only (`from mcp_ableton.protocol import ...`, never relative).
 - **`__all__` in every `__init__.py`** — define the public API explicitly. Unlisted members are internal.
 - **No print statements.** Use `logging` or MCP context logging.
 - **File size:** consider splitting files that grow beyond 300-500 lines or handle multiple unrelated responsibilities.

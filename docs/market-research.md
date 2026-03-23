@@ -1,10 +1,10 @@
-# AbletonMCP Market Research
+# Ableton Live MCP Market Research
 
 Last updated: March 22, 2026
 
 ## Overview
 
-This document surveys the landscape of MCP (Model Context Protocol) servers for Ableton Live on GitHub. The goal is to understand what exists, what's maintained, what gaps remain, and where AbletonMCP can differentiate.
+This document surveys the landscape of MCP (Model Context Protocol) servers for Ableton Live on GitHub. The goal is to understand what exists, what's maintained, what gaps remain, and where Ableton Live MCP can differentiate.
 
 ## Competitive Landscape
 
@@ -149,7 +149,7 @@ No description. Single day of activity (February 20, 2026).
 
 ## Feature Comparison Matrix
 
-| Capability | ahujasid (2.3k stars) | uisato (140 stars) | jpoindexter (7 stars) | ptaczek/daw-mcp (4 stars) | **Our AbletonMCP** |
+| Capability | ahujasid (2.3k stars) | uisato (140 stars) | jpoindexter (7 stars) | ptaczek/daw-mcp (4 stars) | **Our Ableton Live MCP** |
 |---|---|---|---|---|---|
 | **Session clips** | Yes | Yes | Yes | Yes (MIDI only) | Phase 1 |
 | **Arrangement view** | No | No | Claimed | No | **Phase 1 (core)** |
