@@ -6,6 +6,7 @@ remote_script sys.path setup live in conftest.py.
 """
 
 import pytest
+from AbletonLiveMCP import create_instance
 from AbletonLiveMCP.dispatcher import (
     INTERNAL_ERROR,
     UNKNOWN_COMMAND,
@@ -16,7 +17,17 @@ from AbletonLiveMCP.dispatcher import (
 class _FakeControlSurface:
     """Minimal stand-in for a ControlSurface in tests."""
 
-    pass
+    def log_message(self, msg):
+        pass
+
+    def show_message(self, msg):
+        pass
+
+    def song(self):
+        return None
+
+    def schedule_message(self, delay, callback):
+        callback()
 
 
 class _SampleHandler:
@@ -113,3 +124,13 @@ class TestResponseShape:
         assert set(resp.keys()) == {"status", "result", "id", "error"}
         assert resp["result"] is None
         assert set(resp["error"].keys()) == {"code", "message"}
+
+
+class TestCreateInstance:
+    """Ableton calls create_instance(c_instance) to load a Remote Script."""
+
+    def test_returns_control_surface(self) -> None:
+        from AbletonLiveMCP import AbletonLiveMCP
+
+        instance = create_instance(_FakeControlSurface())
+        assert isinstance(instance, AbletonLiveMCP)

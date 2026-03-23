@@ -17,8 +17,18 @@ from mcp_ableton.protocol import CommandRequest, CommandResponse
 # ---------------------------------------------------------------------------
 _framework_stub = types.ModuleType("_Framework")
 _cs_stub = types.ModuleType("_Framework.ControlSurface")
+_noop = lambda *a, **k: None  # noqa: E731
 _cs_stub.ControlSurface = type(  # type: ignore[attr-defined]
-    "ControlSurface", (), {"__init__": lambda *a, **k: None}
+    "ControlSurface",
+    (),
+    {
+        "__init__": _noop,
+        "log_message": _noop,
+        "show_message": _noop,
+        "song": lambda self: None,
+        "application": lambda self: None,
+        "schedule_message": lambda self, delay, cb: cb(),
+    },
 )
 sys.modules.setdefault("_Framework", _framework_stub)
 sys.modules.setdefault("_Framework.ControlSurface", _cs_stub)
