@@ -134,6 +134,10 @@ This project includes agent skills in `.agents/skills/`, symlinked to `.cursor/s
 |-------|----------|
 | `python-mcp-server-generator` | Creating MCP tools, configuring FastMCP, implementing resources/prompts |
 | `python-project-structure` | Organizing modules, defining `__all__`, structuring packages |
+| `python-design-patterns` | Making architecture decisions, refactoring code structure, evaluating abstractions |
+| `python-code-style` | Writing new code, reviewing style, configuring linters, writing docstrings |
+| `python-testing-patterns` | Writing tests, setting up test suites, implementing TDD, mocking dependencies |
+| `python-anti-patterns` | Reviewing code before merge, debugging issues, checking for common mistakes |
 | `ableton-lom` | Working on the Remote Script or any code that interacts with the Live Object Model |
 | `find-skills` | The user asks to find or install new skills |
 

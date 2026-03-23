@@ -11,6 +11,21 @@
       "sourceType": "github",
       "computedHash": "d31e234f0c90694a670222cdd1dafa853e051d7066beda389f1097c22dadd461"
     },
+    "python-anti-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "1f9a75f8f8bfb4baeced54c254f29301f2fa162b8befc92b509fd27d10f0eba6"
+    },
+    "python-code-style": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "35ed0c437f33462187b0a89da8e5bfe9ac259dbc8731257c5445f1a5e1229acf"
+    },
+    "python-design-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "b70500bae0d16740d8a359be63c4645a0ab0f9b839d11d181c45d20958313698"
+    },
     "python-mcp-server-generator": {
       "source": "github/awesome-copilot",
       "sourceType": "github",
@@ -20,6 +35,11 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "computedHash": "2f4f560964af8ecad4d54666c044baa54671d0abd1136c848b539befe24db170"
+    },
+    "python-testing-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "c9ac74e0ecade3d4aacc89b8eb9eec63d9125a3a02e4bac9781ae0ca371227ad"
     }
   }
 }
