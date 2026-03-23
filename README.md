@@ -1,5 +1,7 @@
 # Ableton Live MCP
 
+[![CI](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml)
+
 Control Ableton Live programmatically through AI assistants using the [Model Context Protocol](https://modelcontextprotocol.io).
 
 A Python MCP server and Remote Script that give AI assistants like Cursor and Claude direct access to Ableton Live's full API -- arrangement view, session view, tracks, devices, mixing, and more.
