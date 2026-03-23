@@ -2,159 +2,112 @@
 
 [![CI](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml)
 
-Control Ableton Live programmatically through AI assistants using the [Model Context Protocol](https://modelcontextprotocol.io).
+> **🚧 Work in Progress** — This project is in early development and is not yet functional. The communication infrastructure between the MCP server and Ableton is in place, but no tools are available yet. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
 
-A Python MCP server and Remote Script that give AI assistants like Cursor and Claude direct access to Ableton Live's full API -- arrangement view, session view, tracks, devices, mixing, and more.
+Control Ableton Live with AI. Ask your AI assistant to create tracks, add clips, tweak devices, mix — anything you'd normally do by hand in Ableton.
 
-## Architecture
+Ableton Live MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that connects AI assistants like Cursor and Claude directly to Ableton Live 12, giving them access to the full [Live Object Model](https://docs.cycling74.com/apiref/lom).
+
+## What will this look like?
+
+Once complete, you'll be able to open a chat in Cursor or Claude and say things like:
+
+- *"Create a 4-bar MIDI clip with a Cm7 chord progression"*
+- *"Add a reverb to track 3 and set the decay to 2.5 seconds"*
+- *"Set the tempo to 128 and loop bars 1–8"*
+- *"Solo the bass track and raise its volume to -3 dB"*
+
+The AI assistant will execute these directly in your running Ableton Live session — no copy-pasting, no manual clicking.
+
+## How it works
 
 ```
-┌─────────────────┐                    ┌──────────────────────┐
-│  AI Assistant    │  stdio (MCP)       │  Python MCP Server   │
-│  (Cursor/Claude) │◄──────────────────►│                      │
-└─────────────────┘                    └──────────┬───────────┘
-                                                  │
-                                          TCP :9877 (JSON)
-                                                  │
-                                       ┌──────────▼───────────┐
-                                       │  Python Remote Script │
-                                       │  (inside Ableton)     │
-                                       └──────────┬───────────┘
-                                                  │
-                                          Live Object Model
-                                                  │
-                                       ┌──────────▼───────────┐
-                                       │    Ableton Live 12    │
-                                       └──────────────────────┘
+AI Assistant ◄── MCP (stdio) ──► MCP Server ◄── TCP :9877 ──► Remote Script inside Ableton Live
 ```
 
-**Two independent components:**
+Two components work together:
 
-- **MCP Server** -- a Python process that speaks MCP (JSON-RPC over stdio) with AI clients and communicates with Ableton via TCP. Built with the official [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk).
-- **Remote Script** -- runs inside Ableton Live's embedded Python runtime as a ControlSurface. Receives JSON commands over TCP, executes them against the [Live Object Model](https://docs.cycling74.com/apiref/lom), and returns results.
+- **MCP Server** — a Python process that translates AI assistant requests into commands for Ableton. Built with the official [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk).
+- **Remote Script** — a Python control surface that runs inside Ableton Live, listens for commands over TCP, and executes them against the Live Object Model.
 
-## Features
+## Getting started
 
-### Arrangement View (first-class support)
-- Create, read, and delete MIDI/audio clips at any position
-- Add and retrieve notes from arrangement clips
-- Set clip properties (name, color, loop settings)
+> These instructions describe the intended setup flow. Since the project is still in early development, they won't produce a working system yet — but they show where things are headed.
 
-### Session View
-- Create, fire, stop, and manage session clips
-- Scene management (create, delete, fire, rename)
-
-### Tracks
-- Create and configure MIDI and audio tracks
-- Control volume, panning, mute, solo, arm
-- Input/output routing
-
-### Devices & Parameters
-- List devices on any track
-- Read and write device parameters in real-time
-- Load instruments and effects from Ableton's browser
-
-### Transport & Session
-- Start, stop, record
-- Set tempo and time signature
-- Loop control, song position
-
-### Mixing
-- Track volumes and panning
-- Send levels and return tracks
-
-## Requirements
+### Prerequisites
 
 - Python 3.10+
 - Ableton Live 12 (any edition)
 - macOS or Windows
-- Cursor IDE or Claude Desktop
+- [Cursor](https://cursor.com) or [Claude Desktop](https://claude.ai/download)
 
-## Project Structure
+### 1. Install the MCP server
 
-```
-mcp-ableton/
-  pyproject.toml                        -- Python package manifest
-  src/
-    mcp_ableton/
-      __init__.py
-      server.py                         -- MCP server setup, tool registration
-      connection.py                     -- async TCP client
-      protocol.py                       -- typed request/response models
-      tools/
-        session.py                      -- transport, tempo, time signature
-        track.py                        -- track CRUD and properties
-        clip.py                         -- arrangement + session clips
-        device.py                       -- devices and parameters
-        scene.py                        -- scene management
-        browser.py                      -- browser navigation and loading
-        mixer.py                        -- volume, pan, sends
-  tests/
-    test_connection.py
-    test_protocol.py
-    tools/
-  remote_script/
-    AbletonLiveMCP/
-      __init__.py                       -- Ableton Remote Script
-  docs/
-    installation.md
-    decisions/
+```bash
+pip install mcp-ableton
 ```
 
-## Installation
+### 2. Install the Remote Script
 
-> Detailed installation guide coming soon. See [docs/installation.md](docs/installation.md).
+Copy into Ableton's Remote Scripts folder:
 
-### Quick Start
+```bash
+# macOS
+cp -r remote_script/AbletonLiveMCP/ ~/Music/Ableton/User\ Library/Remote\ Scripts/
 
-1. **Install the MCP server:**
-   ```bash
-   pip install mcp-ableton
-   ```
+# Windows
+xcopy remote_script\AbletonLiveMCP "%USERPROFILE%\Documents\Ableton\User Library\Remote Scripts\AbletonLiveMCP" /E /I
+```
 
-2. **Install the Remote Script** into Ableton's User Library:
-   ```bash
-   cp -r remote_script/AbletonLiveMCP/ ~/Music/Ableton/User\ Library/Remote\ Scripts/
-   ```
+### 3. Enable in Ableton
 
-3. **Configure Ableton:** Preferences > Link, Tempo & MIDI > set Control Surface to "AbletonLiveMCP", Input/Output to "None".
+Open Preferences → Link, Tempo & MIDI → set a Control Surface slot to **AbletonLiveMCP** (Input/Output: None).
 
-4. **Add to Cursor:** Settings > MCP > add server:
-   ```json
-   {
-     "mcpServers": {
-       "AbletonLiveMCP": {
-         "command": "mcp-ableton"
-       }
-     }
-   }
-   ```
+### 4. Connect your AI assistant
 
-5. **Try it:** "Create a MIDI clip in arrangement at bar 1 with a Cm7 chord."
+Add the server to your MCP config:
 
-## Design Principles
+```json
+{
+  "mcpServers": {
+    "AbletonLiveMCP": {
+      "command": "mcp-ableton"
+    }
+  }
+}
+```
 
-- **Arrangement-first** -- most producers work in arrangement view. It's a first-class citizen, not an afterthought.
-- **Typed protocol** -- the JSON protocol between MCP server and Remote Script uses Pydantic models. No stringly-typed command construction.
-- **Registry pattern** -- tools are registered declaratively, not routed through if/elif chains.
-- **Async native** -- the MCP server uses asyncio throughout. No blocking I/O.
-- **Comprehensive coverage** -- targeting the full Live Object Model, not just the basics.
+In **Cursor**, add this under Settings → MCP. For **Claude Desktop**, add it to your Claude config file.
 
-## Roadmap
+## Current status
 
-See the [Ableton Live MCP Roadmap](https://github.com/users/malmazuke/projects/1) project board for current status and planned work.
+The communication layer between the MCP server and Ableton's Remote Script is built and tested. What's next is implementing the actual tools — track creation, clip manipulation, device control, mixing, and more.
 
-**Phase 1 -- Core:** Communication layer, transport, tracks, arrangement + session clips, devices.
-**Phase 2 -- Extended:** Scenes, browser, audio import, mixer, automation.
-**Phase 3 -- Advanced:** Routing, group tracks, take lanes, locators, groove pool, undo/redo.
+See the [project board](https://github.com/users/malmazuke/projects/1) for detailed progress and planned work.
 
-## Tech Stack
+**Planned capabilities:**
 
-- **MCP Server:** Python 3.10+, [modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk), Pydantic
-- **Remote Script:** Python 3 (Ableton's embedded runtime), `_Framework.ControlSurface`
-- **Protocol:** JSON over TCP (port 9877)
-- **CI:** GitHub Actions
+| Area | Examples |
+|------|----------|
+| Transport & session | Play, stop, record, set tempo, time signature, loop |
+| Tracks | Create MIDI/audio tracks, rename, delete, configure routing |
+| Arrangement clips | Create, move, and edit clips in arrangement view |
+| Session clips | Fire, stop, and manage clips in session view |
+| Devices & parameters | Load instruments/effects, read and tweak parameters |
+| Scenes | Create, fire, and manage scenes |
+| Mixing | Volume, pan, sends, solo, mute, arm |
+
+## Contributing
+
+This project is in its early stages and contributions are welcome. Check the [project board](https://github.com/users/malmazuke/projects/1) to see what's in progress and what's coming next.
+
+```bash
+git clone https://github.com/malmazuke/Ableton-Live-MCP.git
+cd Ableton-Live-MCP
+uv sync          # install dependencies
+uv run pytest    # run tests
+```
 
 ## License
 
-MIT -- see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
