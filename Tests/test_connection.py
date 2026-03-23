@@ -96,8 +96,9 @@ class TestWithMockServer:
         async def silent_handler(
             reader: asyncio.StreamReader, writer: asyncio.StreamWriter
         ) -> None:
-            await asyncio.sleep(60)
+            await reader.read()
             writer.close()
+            await writer.wait_closed()
 
         server = await asyncio.start_server(silent_handler, "127.0.0.1", 0)
         port = server.sockets[0].getsockname()[1]
@@ -208,8 +209,9 @@ class TestPing:
         async def silent_handler(
             reader: asyncio.StreamReader, writer: asyncio.StreamWriter
         ) -> None:
-            await asyncio.sleep(60)
+            await reader.read()
             writer.close()
+            await writer.wait_closed()
 
         server = await asyncio.start_server(silent_handler, "127.0.0.1", 0)
         port = server.sockets[0].getsockname()[1]
