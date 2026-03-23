@@ -3,14 +3,41 @@
 All messages are newline-delimited JSON (each message is a single line terminated
 by ``\\n``).  Use :meth:`CommandRequest.to_line` / :meth:`CommandRequest.from_line`
 and the corresponding :class:`CommandResponse` helpers for framing.
+
+Protocol shape::
+
+    Request:  {"command": "category.action", "params": {...}, "id": "uuid"}
+    Response: {"status": "ok"|"error", "result": {...}, "id": "uuid", "error": {...}}
+
+Error codes are standardized via :class:`ErrorCode` constants, shared between
+the MCP server and the Remote Script (which reimplements parsing in plain Python).
 """
 
 from __future__ import annotations
 
 import uuid
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class ErrorCode(str, Enum):
+    """Standardized error codes used by both the MCP server and Remote Script."""
+
+    UNKNOWN_COMMAND = "UNKNOWN_COMMAND"
+    INVALID_PARAMS = "INVALID_PARAMS"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+    NOT_FOUND = "NOT_FOUND"
+    NOT_CONNECTED = "NOT_CONNECTED"
+
+
+class CommandError(Exception):
+    """Raised when the Remote Script returns an error response."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(f"[{code}] {message}")
 
 
 class CommandRequest(BaseModel):
@@ -55,6 +82,14 @@ class CommandResponse(BaseModel):
     id: str
     error: ErrorDetail | None = None
 
+    def raise_on_error(self) -> None:
+        """Raise :class:`CommandError` if this response indicates failure."""
+        if self.status == "error":
+            error = self.error
+            code = error.code if error else ErrorCode.INTERNAL_ERROR
+            message = error.message if error else "Unknown error"
+            raise CommandError(code, message)
+
     def to_line(self) -> bytes:
         """Serialize to a newline-terminated UTF-8 byte string."""
         return self.model_dump_json().encode("utf-8") + b"\n"
@@ -66,7 +101,9 @@ class CommandResponse(BaseModel):
 
 
 __all__ = [
+    "CommandError",
     "CommandRequest",
     "CommandResponse",
+    "ErrorCode",
     "ErrorDetail",
 ]
