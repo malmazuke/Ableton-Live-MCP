@@ -1,6 +1,6 @@
 # Installation Guide
 
-> Detailed installation instructions coming soon.
+> **Note:** Ableton Live MCP is in early development and is not yet functional. These instructions describe the intended setup flow for when the project is ready.
 
 ## Prerequisites
 
@@ -21,17 +21,23 @@ pip install mcp-ableton
 Or for development:
 
 ```bash
-git clone git@github.com:malmazuke/mcp-ableton.git
-cd mcp-ableton
+git clone https://github.com/malmazuke/Ableton-Live-MCP.git
+cd Ableton-Live-MCP
 uv sync
 ```
 
 ### 2. Install the Remote Script
 
-Copy the Remote Script into Ableton's User Library:
+Copy the Remote Script into Ableton's Remote Scripts folder:
 
+**macOS:**
 ```bash
 cp -r remote_script/AbletonLiveMCP ~/Music/Ableton/User\ Library/Remote\ Scripts/
+```
+
+**Windows:**
+```bash
+xcopy remote_script\AbletonLiveMCP "%USERPROFILE%\Documents\Ableton\User Library\Remote Scripts\AbletonLiveMCP" /E /I
 ```
 
 ### 3. Configure Ableton Live
