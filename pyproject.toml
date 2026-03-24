@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 mcp-ableton = "mcp_ableton.server:main"
+mcp-ableton-setup = "mcp_ableton.setup:main"
 
 [dependency-groups]
 dev = [
