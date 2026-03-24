@@ -62,7 +62,8 @@ class PlaybackPosition(BaseModel):
 
 def _get_connection(ctx: Context) -> AbletonConnection:
     """Extract the AbletonConnection from the FastMCP context."""
-    return ctx.request_context.lifespan_context.connection
+    connection: AbletonConnection = ctx.request_context.lifespan_context.connection
+    return connection
 
 
 @mcp.tool()
