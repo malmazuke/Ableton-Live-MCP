@@ -6,6 +6,7 @@ are started during ``__init__`` and torn down in ``disconnect()``.
 """
 
 import threading
+from typing import Any
 
 from _Framework.ControlSurface import ControlSurface
 
@@ -14,9 +15,6 @@ from .tcp_server import TcpServer
 
 TCP_HOST = "127.0.0.1"
 TCP_PORT = 9877
-
-
-from typing import Any
 
 
 def create_instance(c_instance: Any) -> "AbletonLiveMCP":
