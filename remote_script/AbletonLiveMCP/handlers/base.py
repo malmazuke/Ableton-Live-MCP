@@ -6,6 +6,8 @@ for any operation that mutates Ableton's state.
 """
 
 import queue
+from collections.abc import Callable
+from typing import Any
 
 MAIN_THREAD_TIMEOUT = 30
 
@@ -17,17 +19,17 @@ class BaseHandler:
     helper for scheduling work on Ableton's main thread.
     """
 
-    def __init__(self, control_surface):
+    def __init__(self, control_surface: Any) -> None:
         self._control_surface = control_surface
 
     @property
-    def _song(self):
+    def _song(self) -> Any:
         return self._control_surface.song()
 
-    def _log(self, message):
+    def _log(self, message: str) -> None:
         self._control_surface.log_message(message)
 
-    def _run_on_main_thread(self, fn):
+    def _run_on_main_thread(self, fn: Callable[[], Any]) -> Any:
         """Schedule *fn* on Ableton's main thread and block until it completes.
 
         Uses ``schedule_message(0, callback)`` to run on the next tick of
@@ -36,9 +38,9 @@ class BaseHandler:
 
         Returns the value produced by *fn* or re-raises any exception.
         """
-        result_queue = queue.Queue()
+        result_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
 
-        def _wrapper():
+        def _wrapper() -> None:
             try:
                 result_queue.put(("ok", fn()))
             except Exception as exc:

@@ -16,7 +16,10 @@ TCP_HOST = "127.0.0.1"
 TCP_PORT = 9877
 
 
-def create_instance(c_instance):
+from typing import Any
+
+
+def create_instance(c_instance: Any) -> "AbletonLiveMCP":
     """Entry point called by Ableton Live to instantiate the Remote Script."""
     return AbletonLiveMCP(c_instance)
 
@@ -24,7 +27,7 @@ def create_instance(c_instance):
 class AbletonLiveMCP(ControlSurface):
     """MCP Remote Script entry point loaded by Ableton Live."""
 
-    def __init__(self, c_instance):
+    def __init__(self, c_instance: Any) -> None:
         ControlSurface.__init__(self, c_instance)
 
         self.log_message("AbletonLiveMCP: initialising")
@@ -47,15 +50,13 @@ class AbletonLiveMCP(ControlSurface):
         self.log_message("AbletonLiveMCP: ready")
         self.show_message(f"AbletonLiveMCP: listening on port {TCP_PORT}")
 
-    def _register_handlers(self):
-        """Register command handlers with the dispatcher.
+    def _register_handlers(self) -> None:
+        """Register command handlers with the dispatcher."""
+        from .handlers.session import SessionHandler
 
-        Add new handlers here as they are implemented in subsequent issues
-        (session, track, clip, device, etc.).
-        """
-        pass
+        self._dispatcher.register("session", SessionHandler(self))
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Ableton lifecycle hook -- shut down the TCP server."""
         self.log_message("AbletonLiveMCP: shutting down")
         self._tcp_server.shutdown()

@@ -4,11 +4,17 @@ The dispatcher is pure Python with no Ableton imports, making it testable
 outside of Live's runtime.
 """
 
+from typing import Any
+
 # Error codes mirrored from the MCP server's protocol.ErrorCode.
 # Duplicated here because the Remote Script cannot import Pydantic-based modules.
 UNKNOWN_COMMAND = "UNKNOWN_COMMAND"
 INVALID_PARAMS = "INVALID_PARAMS"
 INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
+class InvalidParamsError(Exception):
+    """Raised by handlers when parameters fail semantic validation."""
 
 
 class Dispatcher:
@@ -19,15 +25,20 @@ class Dispatcher:
     command is handled directly without an external handler.
     """
 
-    def __init__(self, control_surface):
-        self._handlers = {}
+    def __init__(self, control_surface: Any) -> None:
+        self._handlers: dict[str, Any] = {}
         self._control_surface = control_surface
 
-    def register(self, category, handler):
+    def register(self, category: str, handler: Any) -> None:
         """Register a handler instance for a command category."""
         self._handlers[category] = handler
 
-    def dispatch(self, command, params, request_id):
+    def dispatch(
+        self,
+        command: str,
+        params: dict[str, Any],
+        request_id: str,
+    ) -> dict[str, Any]:
         """Route a command to its handler and return a response dict.
 
         Returns a dict matching the protocol response shape::
@@ -64,11 +75,13 @@ class Dispatcher:
         try:
             result = method(params)
             return _ok(result, request_id)
+        except InvalidParamsError as exc:
+            return _error(INVALID_PARAMS, str(exc), request_id)
         except Exception as exc:
             return _error(INTERNAL_ERROR, str(exc), request_id)
 
 
-def _ok(result, request_id):
+def _ok(result: Any, request_id: str) -> dict[str, Any]:
     return {
         "status": "ok",
         "result": result,
@@ -77,7 +90,7 @@ def _ok(result, request_id):
     }
 
 
-def _error(code, message, request_id):
+def _error(code: str, message: str, request_id: str) -> dict[str, Any]:
     return {
         "status": "error",
         "result": None,
