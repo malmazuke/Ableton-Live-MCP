@@ -36,48 +36,130 @@ Two components work together:
 
 ### Prerequisites
 
-- Python 3.10+
+- [Python 3.10+](https://www.python.org/downloads/)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
 - Ableton Live 12 (any edition)
-- macOS or Windows
+- macOS (Windows support coming soon)
 - [Cursor](https://cursor.com) or [Claude Desktop](https://claude.ai/download)
 
-### 1. Install the MCP server
+### 1. Clone and install dependencies
 
 ```bash
-pip install mcp-ableton
+git clone https://github.com/malmazuke/Ableton-Live-MCP.git
+cd Ableton-Live-MCP
+uv sync
 ```
 
 ### 2. Install the Remote Script
 
-Copy into Ableton's Remote Scripts folder:
+The setup tool automatically finds your Ableton Remote Scripts directory and creates a symlink:
 
 ```bash
-# macOS
-cp -r remote_script/AbletonLiveMCP/ ~/Music/Ableton/User\ Library/Remote\ Scripts/
-
-# Windows
-xcopy remote_script\AbletonLiveMCP "%USERPROFILE%\Documents\Ableton\User Library\Remote Scripts\AbletonLiveMCP" /E /I
+uv run mcp-ableton-setup
 ```
 
-### 3. Enable in Ableton
+This keeps the Remote Script in sync with the repository -- any updates you pull will be reflected immediately.
 
-Open Preferences → Link, Tempo & MIDI → set a Control Surface slot to **AbletonLiveMCP** (Input/Output: None).
+<details>
+<summary>Setup options</summary>
 
-### 4. Connect your AI assistant
+```bash
+uv run mcp-ableton-setup --dry-run        # preview without making changes
+uv run mcp-ableton-setup --method copy     # copy files instead of symlink
+uv run mcp-ableton-setup --target /path    # override auto-detected directory
+uv run mcp-ableton-setup --uninstall       # remove the Remote Script
+```
 
-Add the server to your MCP config:
+</details>
+
+<details>
+<summary>Manual installation (fallback)</summary>
+
+If the setup tool doesn't work for your system, copy the Remote Script manually:
+
+**macOS:**
+```bash
+cp -r remote_script/AbletonLiveMCP ~/Music/Ableton/User\ Library/Remote\ Scripts/
+```
+
+**Windows:**
+```powershell
+Copy-Item -Recurse remote_script\AbletonLiveMCP "$env:USERPROFILE\Documents\Ableton\User Library\Remote Scripts\"
+```
+
+</details>
+
+### 3. Configure Ableton Live
+
+1. Open (or restart) Ableton Live 12
+2. Go to **Preferences** (Cmd+, on macOS)
+3. Navigate to **Link, Tempo & MIDI**
+4. In an empty **Control Surface** slot, select **AbletonLiveMCP**
+5. Set both **Input** and **Output** to **None**
+
+You should see `AbletonLiveMCP: Listening for commands on port 9877` in the status bar at the bottom of the Ableton window.
+
+### 4. Configure your AI assistant
+
+**Cursor:**
+
+Go to Settings > MCP > Add new MCP server, then enter:
 
 ```json
 {
   "mcpServers": {
     "AbletonLiveMCP": {
-      "command": "mcp-ableton"
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/Ableton-Live-MCP", "mcp-ableton"]
     }
   }
 }
 ```
 
-In **Cursor**, add this under Settings → MCP. For **Claude Desktop**, add it to your Claude config file.
+Replace `/path/to/Ableton-Live-MCP` with the actual path to your cloned repository.
+
+**Claude Desktop:**
+
+Edit your config file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "AbletonLiveMCP": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/Ableton-Live-MCP", "mcp-ableton"]
+    }
+  }
+}
+```
+
+### 5. Verify
+
+1. Make sure Ableton Live is running with the Remote Script active (check the status bar)
+2. Open a new chat in your AI assistant
+3. Try: *"Get information about my current Ableton session"*
+
+### Uninstalling
+
+Remove the Remote Script from Ableton:
+
+```bash
+uv run mcp-ableton-setup --uninstall
+```
+
+Then remove the MCP server configuration from your AI assistant's settings.
+
+### Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Remote Script not appearing in Ableton | Restart Ableton after running the setup tool. Check that the symlink/directory exists in your Remote Scripts folder. |
+| "Connection refused" errors | Make sure Ableton Live is running and the AbletonLiveMCP control surface is selected in Preferences. |
+| Port 9877 already in use | Another instance may be running. Close other Ableton instances or applications using that port. |
+| Setup tool can't find Remote Scripts directory | Use `--target /path/to/Remote\ Scripts` to specify the directory manually. |
+| Changes not reflected after git pull | If you installed with `--method copy`, re-run `uv run mcp-ableton-setup` to update. Symlink installs update automatically. |
+
+For more detailed instructions, see [docs/installation.md](docs/installation.md).
 
 ## Current status
 
