@@ -9,8 +9,10 @@ import pytest
 from AbletonLiveMCP import create_instance
 from AbletonLiveMCP.dispatcher import (
     INTERNAL_ERROR,
+    NOT_FOUND,
     UNKNOWN_COMMAND,
     Dispatcher,
+    NotFoundError,
 )
 
 
@@ -28,6 +30,13 @@ class _FakeControlSurface:
 
     def schedule_message(self, delay, callback):
         callback()
+
+
+class _NotFoundHandler:
+    """Handler that raises :class:`NotFoundError` for dispatcher mapping tests."""
+
+    def handle_missing(self, params):
+        raise NotFoundError("resource not found")
 
 
 class _SampleHandler:
@@ -89,6 +98,19 @@ class TestCommandRouting:
         assert resp["status"] == "error"
         assert resp["error"]["code"] == INTERNAL_ERROR
         assert "tempo is required" in resp["error"]["message"]
+
+
+class TestNotFoundError:
+    def test_not_found_maps_to_not_found_code(self) -> None:
+        cs = _FakeControlSurface()
+        d = Dispatcher(cs)
+        d.register("nf", _NotFoundHandler())
+
+        resp = d.dispatch("nf.missing", {}, "nf-1")
+
+        assert resp["status"] == "error"
+        assert resp["error"]["code"] == NOT_FOUND
+        assert "resource not found" in resp["error"]["message"]
 
 
 class TestUnknownCommands:

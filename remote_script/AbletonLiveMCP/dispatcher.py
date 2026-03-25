@@ -11,10 +11,15 @@ from typing import Any
 UNKNOWN_COMMAND = "UNKNOWN_COMMAND"
 INVALID_PARAMS = "INVALID_PARAMS"
 INTERNAL_ERROR = "INTERNAL_ERROR"
+NOT_FOUND = "NOT_FOUND"
 
 
 class InvalidParamsError(Exception):
     """Raised by handlers when parameters fail semantic validation."""
+
+
+class NotFoundError(Exception):
+    """Raised when a requested resource (e.g. track index) does not exist."""
 
 
 class Dispatcher:
@@ -77,6 +82,8 @@ class Dispatcher:
             return _ok(result, request_id)
         except InvalidParamsError as exc:
             return _error(INVALID_PARAMS, str(exc), request_id)
+        except NotFoundError as exc:
+            return _error(NOT_FOUND, str(exc), request_id)
         except Exception as exc:
             return _error(INTERNAL_ERROR, str(exc), request_id)
 

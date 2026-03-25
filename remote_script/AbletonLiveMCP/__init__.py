@@ -51,8 +51,10 @@ class AbletonLiveMCP(ControlSurface):
     def _register_handlers(self) -> None:
         """Register command handlers with the dispatcher."""
         from .handlers.session import SessionHandler
+        from .handlers.track import TrackHandler
 
         self._dispatcher.register("session", SessionHandler(self))
+        self._dispatcher.register("track", TrackHandler(self))
 
     def disconnect(self) -> None:
         """Ableton lifecycle hook -- shut down the TCP server."""
