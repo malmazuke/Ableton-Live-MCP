@@ -36,24 +36,28 @@ class TrackHandler(BaseHandler):
 
     def handle_get_info(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return a structured snapshot of one track (read-only)."""
-        track, track_index, _lo = self._resolve_track(params)
 
-        device_names = [d.name for d in track.devices]
-        clip_slot_has_clip = [bool(slot.has_clip) for slot in track.clip_slots]
+        def _read() -> dict[str, Any]:
+            track, track_index, _lo = self._resolve_track(params)
 
-        return {
-            "name": track.name,
-            "track_index": track_index,
-            "is_audio_track": bool(track.has_audio_input),
-            "is_midi_track": bool(track.has_midi_input),
-            "mute": bool(track.mute),
-            "solo": bool(track.solo),
-            "arm": bool(track.arm),
-            "volume": float(track.mixer_device.volume.value),
-            "pan": float(track.mixer_device.panning.value),
-            "device_names": device_names,
-            "clip_slot_has_clip": clip_slot_has_clip,
-        }
+            device_names = [d.name for d in track.devices]
+            clip_slot_has_clip = [bool(slot.has_clip) for slot in track.clip_slots]
+
+            return {
+                "name": track.name,
+                "track_index": track_index,
+                "is_audio_track": bool(track.has_audio_input),
+                "is_midi_track": bool(track.has_midi_input),
+                "mute": bool(track.mute),
+                "solo": bool(track.solo),
+                "arm": bool(track.arm),
+                "volume": float(track.mixer_device.volume.value),
+                "pan": float(track.mixer_device.panning.value),
+                "device_names": device_names,
+                "clip_slot_has_clip": clip_slot_has_clip,
+            }
+
+        return self._run_on_main_thread(_read)
 
     def handle_create_midi(self, params: dict[str, Any]) -> dict[str, Any]:
         """Create a MIDI track; optional ``name`` applied on the main thread."""
@@ -74,9 +78,8 @@ class TrackHandler(BaseHandler):
             if not name.strip():
                 raise InvalidParamsError("'name' must not be empty")
 
-        song = self._song
-
         def _do_create() -> dict[str, Any]:
+            song = self._song
             track_count = len(song.tracks)
             if index < -1 or (index != -1 and (index < 0 or index > track_count - 1)):
                 raise InvalidParamsError(
@@ -100,9 +103,9 @@ class TrackHandler(BaseHandler):
 
     def handle_delete(self, params: dict[str, Any]) -> dict[str, Any]:
         """Delete a track by 1-based index."""
-        _track, track_index, lo = self._resolve_track(params)
 
         def _do_delete() -> dict[str, Any]:
+            _track, track_index, lo = self._resolve_track(params)
             self._song.delete_track(lo)
             return {"track_index": track_index}
 
@@ -110,9 +113,9 @@ class TrackHandler(BaseHandler):
 
     def handle_duplicate(self, params: dict[str, Any]) -> dict[str, Any]:
         """Duplicate a track; copy is inserted immediately after the source."""
-        _track, track_index, lo = self._resolve_track(params)
 
         def _do_duplicate() -> dict[str, Any]:
+            _track, track_index, lo = self._resolve_track(params)
             self._song.duplicate_track(lo)
             new_lo = lo + 1
             return {
@@ -124,12 +127,12 @@ class TrackHandler(BaseHandler):
 
     def handle_set_name(self, params: dict[str, Any]) -> dict[str, Any]:
         """Rename a track."""
-        _track, track_index, lo = self._resolve_track(params)
         name = params.get("name")
         if name is None or not isinstance(name, str) or not name.strip():
             raise InvalidParamsError("'name' must be a non-empty string")
 
         def _set() -> dict[str, Any]:
+            _track, track_index, lo = self._resolve_track(params)
             self._song.tracks[lo].name = name
             return {"track_index": track_index}
 
@@ -137,12 +140,12 @@ class TrackHandler(BaseHandler):
 
     def handle_set_mute(self, params: dict[str, Any]) -> dict[str, Any]:
         """Set track mute."""
-        _track, track_index, lo = self._resolve_track(params)
         mute = params.get("mute")
         if mute is None or not isinstance(mute, bool):
             raise InvalidParamsError("'mute' must be a boolean")
 
         def _set() -> dict[str, Any]:
+            _track, track_index, lo = self._resolve_track(params)
             self._song.tracks[lo].mute = mute
             return {"track_index": track_index}
 
@@ -150,12 +153,12 @@ class TrackHandler(BaseHandler):
 
     def handle_set_solo(self, params: dict[str, Any]) -> dict[str, Any]:
         """Set track solo."""
-        _track, track_index, lo = self._resolve_track(params)
         solo = params.get("solo")
         if solo is None or not isinstance(solo, bool):
             raise InvalidParamsError("'solo' must be a boolean")
 
         def _set() -> dict[str, Any]:
+            _track, track_index, lo = self._resolve_track(params)
             self._song.tracks[lo].solo = solo
             return {"track_index": track_index}
 
@@ -163,16 +166,16 @@ class TrackHandler(BaseHandler):
 
     def handle_set_arm(self, params: dict[str, Any]) -> dict[str, Any]:
         """Arm or disarm a track for recording."""
-        track, track_index, lo = self._resolve_track(params)
         arm = params.get("arm")
         if arm is None or not isinstance(arm, bool):
             raise InvalidParamsError("'arm' must be a boolean")
-        if not bool(track.can_be_armed):
-            raise InvalidParamsError(
-                f"Track {track_index} cannot be armed (e.g. return/master)"
-            )
 
         def _set() -> dict[str, Any]:
+            track, track_index, lo = self._resolve_track(params)
+            if not bool(track.can_be_armed):
+                raise InvalidParamsError(
+                    f"Track {track_index} cannot be armed (e.g. return/master)"
+                )
             self._song.tracks[lo].arm = arm
             return {"track_index": track_index}
 
