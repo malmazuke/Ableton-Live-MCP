@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml)
 
-> **🚧 Work in Progress** — This project is in early development and is not yet functional. The communication infrastructure between the MCP server and Ableton is in place, but no tools are available yet. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
+> **🚧 Work in Progress** — This project is in early development. The MCP server and Remote Script can talk over TCP; **session/transport** and **track management** MCP tools are implemented, with more domains coming. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
 
 Control Ableton Live with AI. Ask your AI assistant to create tracks, add clips, tweak devices, mix — anything you'd normally do by hand in Ableton.
 

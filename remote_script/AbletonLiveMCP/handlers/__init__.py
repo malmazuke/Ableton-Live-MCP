@@ -5,5 +5,6 @@ issues as the tool surface grows.
 """
 
 from .session import SessionHandler
+from .track import TrackHandler
 
-__all__ = ["SessionHandler"]
+__all__ = ["SessionHandler", "TrackHandler"]

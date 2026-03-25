@@ -484,6 +484,13 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `start_playback` | `session.start_playback` |
 | `get_track_info` | `track.get_info` |
 | `create_midi_track` | `track.create_midi` |
+| `create_audio_track` | `track.create_audio` |
+| `delete_track` | `track.delete` |
+| `duplicate_track` | `track.duplicate` |
+| `set_track_name` | `track.set_name` |
+| `set_track_mute` | `track.set_mute` |
+| `set_track_solo` | `track.set_solo` |
+| `set_track_arm` | `track.set_arm` |
 | `create_clip` | `clip.create` |
 | `add_notes_to_clip` | `clip.add_notes` |
 | `get_clip_notes` | `clip.get_notes` |
