@@ -6,9 +6,12 @@ import asyncio
 import sys
 import types
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from mcp_ableton._app import AppContext
+from mcp_ableton.connection import AbletonConnection
 from mcp_ableton.protocol import CommandRequest, CommandResponse
 
 # ---------------------------------------------------------------------------
@@ -76,3 +79,29 @@ def echo_server():
         return server, port
 
     return _create
+
+
+# ---------------------------------------------------------------------------
+# Mock connection and context fixtures for MCP tool tests.
+# Reusable across all tool test modules (session, track, clip, etc.).
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def mock_connection() -> AsyncMock:
+    """An ``AsyncMock`` of :class:`AbletonConnection`.
+
+    Tests configure ``mock_connection.send_command.return_value`` with
+    the desired :class:`CommandResponse` before calling a tool function.
+    """
+    return AsyncMock(spec=AbletonConnection)
+
+
+@pytest.fixture
+def mock_context(mock_connection: AsyncMock) -> MagicMock:
+    """A mock FastMCP ``Context`` wired to :fixture:`mock_connection`.
+
+    Provides ``ctx.request_context.lifespan_context.connection`` so that
+    tool functions can extract the connection without a running server.
+    """
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = AppContext(connection=mock_connection)
+    return ctx

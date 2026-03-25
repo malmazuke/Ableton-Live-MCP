@@ -106,9 +106,11 @@ The Remote Script runs inside Ableton Live 12's embedded Python 3 runtime, which
 
 - No `pip install` — only the standard library and Ableton's `_Framework` modules are available.
 - Must subclass `_Framework.ControlSurface.ControlSurface`.
+- **Must define `create_instance(c_instance)`** in `__init__.py` — this is the entry point Ableton calls to instantiate the Remote Script. Without it, the script will not appear in the Control Surface dropdown.
 - Must use Ableton's threading model — schedule all state changes via `schedule_message(0, callback)` to run on the main thread.
 - No async/await — the Remote Script is synchronous.
 - Objects are accessed via canonical paths like `live_set tracks 0 devices 1 parameters 2`.
+- **`__pycache__` conflicts** — if using a symlink install, your local Python may write `.pyc` files that Ableton's embedded Python cannot load. Delete `__pycache__` directories under `remote_script/` if Ableton crashes or fails to load the script after local test runs.
 - Use the `ableton-lom` skill (see below) for the full Live Object Model API reference, including reference files by domain (song, track, clip, device, etc.).
 
 ## Testing

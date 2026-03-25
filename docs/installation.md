@@ -200,6 +200,22 @@ Remove the `AbletonLiveMCP` entry from your AI assistant's MCP configuration.
 - Check that nothing else is using port 9877: `lsof -i :9877` (macOS).
 - Look at the Ableton log for error messages (see below).
 
+### Stale connection after restarting Ableton
+
+If you restart Ableton while the MCP server is running, the TCP connection goes stale. The MCP server will report "Broken pipe" or "Connection refused" errors.
+
+**Fix:** Restart the MCP server. In Cursor, toggle the AbletonLiveMCP switch off and back on in Settings > MCP. In Claude Desktop, restart the application.
+
+### `__pycache__` errors with symlink install
+
+If you installed via symlink and run tests locally (e.g. `uv run pytest`), your local Python may write `.pyc` bytecode files that are incompatible with Ableton's embedded Python. This can cause crashes or import errors when Ableton loads the Remote Script.
+
+**Fix:** Delete the cached bytecode and restart Ableton:
+
+```bash
+find remote_script/AbletonLiveMCP -type d -name __pycache__ -exec rm -rf {} +
+```
+
 ### Port 9877 already in use
 
 Another process is using the port. Close other Ableton instances or find the process:
