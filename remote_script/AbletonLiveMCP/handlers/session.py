@@ -15,28 +15,28 @@ VALID_DENOMINATORS = frozenset({1, 2, 4, 8, 16, 32})
 class SessionHandler(BaseHandler):
     """Handle session and transport commands.
 
-    Read-only handlers (``handle_get_info``, ``handle_get_playback_position``)
-    run on the client-socket thread.  Write handlers schedule work on
-    Ableton's main thread via ``_run_on_main_thread``.
-
-    Thread-safety note: reading multiple LOM properties from the client
-    thread could theoretically produce inconsistent snapshots if the main
-    thread mutates state mid-read.  Acceptable for Phase 1; wrap in
-    ``_run_on_main_thread`` if manual testing reveals issues.
+    All Live Object Model access runs on Ableton's main thread via
+    ``_run_on_main_thread``.  Calling ``control_surface.song()`` or touching
+    ``song.*`` from the TCP worker thread is unsafe and can crash or error
+    (especially around project load).
     """
 
     def handle_get_info(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return current session state."""
-        song = self._song
-        return {
-            "tempo": song.tempo,
-            "signature_numerator": song.signature_numerator,
-            "signature_denominator": song.signature_denominator,
-            "track_count": len(song.tracks),
-            "is_playing": song.is_playing,
-            "is_recording": song.record_mode,
-            "song_length": song.song_length,
-        }
+
+        def _read() -> dict[str, Any]:
+            song = self._song
+            return {
+                "tempo": song.tempo,
+                "signature_numerator": song.signature_numerator,
+                "signature_denominator": song.signature_denominator,
+                "track_count": len(song.tracks),
+                "is_playing": song.is_playing,
+                "is_recording": song.record_mode,
+                "song_length": song.song_length,
+            }
+
+        return self._run_on_main_thread(_read)
 
     def handle_set_tempo(self, params: dict[str, Any]) -> dict[str, Any]:
         """Set the song tempo in BPM (20--999)."""
@@ -106,22 +106,26 @@ class SessionHandler(BaseHandler):
 
     def handle_get_playback_position(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return current playback position with derived bar/beat values."""
-        song = self._song
-        current_time = song.current_song_time
-        tempo = song.tempo
-        numerator = song.signature_numerator
 
-        bar = int(current_time // numerator) + 1
-        beat_in_bar = (current_time % numerator) + 1
-        time_seconds = current_time * 60.0 / tempo
+        def _read() -> dict[str, Any]:
+            song = self._song
+            current_time = song.current_song_time
+            tempo = song.tempo
+            numerator = song.signature_numerator
 
-        return {
-            "beats": current_time,
-            "bar": bar,
-            "beat_in_bar": beat_in_bar,
-            "time_seconds": time_seconds,
-            "is_playing": song.is_playing,
-        }
+            bar = int(current_time // numerator) + 1
+            beat_in_bar = (current_time % numerator) + 1
+            time_seconds = current_time * 60.0 / tempo
+
+            return {
+                "beats": current_time,
+                "bar": bar,
+                "beat_in_bar": beat_in_bar,
+                "time_seconds": time_seconds,
+                "is_playing": song.is_playing,
+            }
+
+        return self._run_on_main_thread(_read)
 
 
 __all__ = ["SessionHandler"]
