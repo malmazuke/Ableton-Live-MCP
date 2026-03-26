@@ -9,6 +9,32 @@ from AbletonLiveMCP.handlers.clip import ClipHandler
 from Tests.test_track_handler import _FakeControlSurface, _FakeSong, _Track
 
 
+def _note(
+    note_id: int,
+    pitch: int,
+    start_time: float,
+    duration: float,
+    velocity: float = 100.0,
+    *,
+    mute: bool = False,
+    probability: float | None = None,
+    velocity_deviation: float | None = None,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "note_id": note_id,
+        "pitch": pitch,
+        "start_time": start_time,
+        "duration": duration,
+        "velocity": velocity,
+        "mute": mute,
+    }
+    if probability is not None:
+        result["probability"] = probability
+    if velocity_deviation is not None:
+        result["velocity_deviation"] = velocity_deviation
+    return result
+
+
 class _Clip:
     def __init__(
         self,
@@ -16,6 +42,7 @@ class _Clip:
         length: float = 4.0,
         *,
         audio: bool = False,
+        notes: list[dict[str, object]] | None = None,
     ) -> None:
         self.name = name
         self.length = length
@@ -23,6 +50,57 @@ class _Clip:
         self.is_midi_clip = not audio
         self.is_playing = False
         self.is_recording = False
+        self._notes: list[dict[str, object]] = []
+        self._next_note_id = 1
+
+        for note in notes or []:
+            self._notes.append(dict(note))
+            self._next_note_id = max(self._next_note_id, int(note["note_id"]) + 1)
+
+    @property
+    def notes(self) -> list[dict[str, object]]:
+        return [dict(note) for note in self._notes]
+
+    def get_all_notes_extended(self):
+        return tuple(self.notes)
+
+    def add_new_notes(self, payload) -> tuple[int, ...]:
+        assert isinstance(payload, tuple)
+
+        note_ids: list[int] = []
+        for note in payload:
+            assert isinstance(note, dict)
+            note_id = self._next_note_id
+            self._next_note_id += 1
+            stored: dict[str, object] = {
+                "note_id": note_id,
+                "pitch": int(note["pitch"]),
+                "start_time": float(note["start_time"]),
+                "duration": float(note["duration"]),
+                "velocity": float(note["velocity"]),
+                "mute": bool(note.get("mute", False)),
+            }
+            if "probability" in note:
+                stored["probability"] = float(note["probability"])
+            if "velocity_deviation" in note:
+                stored["velocity_deviation"] = float(note["velocity_deviation"])
+            self._notes.append(stored)
+            note_ids.append(note_id)
+
+        self._notes.sort(
+            key=lambda item: (
+                float(item["start_time"]),
+                int(item["pitch"]),
+                int(item["note_id"]),
+            )
+        )
+        return tuple(note_ids)
+
+    def remove_notes_by_id(self, note_ids: list[int]) -> None:
+        note_id_set = set(note_ids)
+        self._notes = [
+            note for note in self._notes if int(note["note_id"]) not in note_id_set
+        ]
 
 
 class _Slot:
@@ -32,6 +110,7 @@ class _Slot:
 
     @property
     def clip(self) -> _Clip:
+        assert self._clip is not None
         return self._clip
 
     def create_clip(self, length: float) -> None:
@@ -51,16 +130,45 @@ class _Slot:
         pass
 
 
-def _track_with_slots(*slots: _Slot) -> _Track:
-    t = _Track("Midi", midi=True)
-    t.clip_slots = list(slots)
-    return t
+def _track_with_slots(*slots: _Slot, midi: bool = True, audio: bool = False) -> _Track:
+    track = _Track("Track", midi=midi, audio=audio)
+    track.clip_slots = list(slots)
+    return track
 
 
 class _SongWithClipTracks(_FakeSong):
     def __init__(self) -> None:
         self.tracks = [
-            _track_with_slots(_Slot(), _Slot(_Clip("Hi", 2.0)), _Slot()),
+            _track_with_slots(
+                _Slot(),
+                _Slot(
+                    _Clip(
+                        "Hi",
+                        2.0,
+                        notes=[
+                            _note(1, 60, 0.0, 0.5, 100.0),
+                            _note(
+                                2,
+                                64,
+                                1.0,
+                                0.25,
+                                96.0,
+                                probability=0.5,
+                            ),
+                            _note(
+                                3,
+                                67,
+                                2.0,
+                                0.75,
+                                110.0,
+                                mute=True,
+                                velocity_deviation=4.0,
+                            ),
+                        ],
+                    )
+                ),
+                _Slot(),
+            ),
         ]
 
 
@@ -69,15 +177,16 @@ class _TrackDup(_Track):
         src_slot = self.clip_slots[index]
         if not src_slot.has_clip:
             raise RuntimeError("no clip")
-        for i in range(index + 1, len(self.clip_slots)):
-            if not self.clip_slots[i].has_clip:
-                c = src_slot.clip
-                self.clip_slots[i]._clip = _Clip(
-                    name=c.name + " 2",
-                    length=c.length,
-                    audio=c.is_audio_clip,
+        for slot_index in range(index + 1, len(self.clip_slots)):
+            if not self.clip_slots[slot_index].has_clip:
+                clip = src_slot.clip
+                self.clip_slots[slot_index]._clip = _Clip(
+                    name=clip.name + " 2",
+                    length=clip.length,
+                    audio=clip.is_audio_clip,
+                    notes=clip.notes,
                 )
-                self.clip_slots[i].has_clip = True
+                self.clip_slots[slot_index].has_clip = True
                 return
         raise RuntimeError("no empty slot")
 
@@ -112,11 +221,11 @@ class TestCreateDelete:
 
     def test_create_rejects_audio_track(self) -> None:
         song = _FakeSong()
-        song.tracks = [_Track("A", midi=False, audio=True)]
-        song.tracks[0].clip_slots = [_Slot()]
-        h = ClipHandler(_FakeControlSurface(song))
+        song.tracks = [_track_with_slots(_Slot(), midi=False, audio=True)]
+        handler = ClipHandler(_FakeControlSurface(song))
+
         with pytest.raises(InvalidParamsError, match="MIDI"):
-            h.handle_create({"track_index": 1, "clip_slot_index": 1})
+            handler.handle_create({"track_index": 1, "clip_slot_index": 1})
 
     def test_delete(
         self,
@@ -131,29 +240,26 @@ class TestCreateDelete:
 class TestDuplicate:
     def test_duplicate_finds_new_slot(self) -> None:
         song = _FakeSong()
-        song.tracks = [
-            _TrackDup(
-                "T",
-                midi=True,
-            ),
-        ]
+        song.tracks = [_TrackDup("T", midi=True)]
         song.tracks[0].clip_slots = [
             _Slot(_Clip("a", 1.0)),
             _Slot(),
             _Slot(),
         ]
-        h = ClipHandler(_FakeControlSurface(song))
-        result = h.handle_duplicate({"track_index": 1, "clip_slot_index": 1})
+        handler = ClipHandler(_FakeControlSurface(song))
+
+        result = handler.handle_duplicate({"track_index": 1, "clip_slot_index": 1})
+
         assert result["new_clip_slot_index"] == 2
         assert song.tracks[0].clip_slots[1].has_clip
 
 
 class TestSetNameFireStopGetInfo:
     def test_set_name(self, handler_clip: ClipHandler) -> None:
-        r = handler_clip.handle_set_name(
+        result = handler_clip.handle_set_name(
             {"track_index": 1, "clip_slot_index": 2, "name": "Renamed"},
         )
-        assert r == {
+        assert result == {
             "track_index": 1,
             "clip_slot_index": 2,
             "name": "Renamed",
@@ -168,12 +274,219 @@ class TestSetNameFireStopGetInfo:
         ) == {"track_index": 1, "clip_slot_index": 2}
 
     def test_get_info(self, handler_clip: ClipHandler) -> None:
-        r = handler_clip.handle_get_info({"track_index": 1, "clip_slot_index": 2})
-        assert r["name"] == "Hi"
-        assert r["length"] == 2.0
-        assert r["is_midi_clip"] is True
-        assert r["is_audio_clip"] is False
+        result = handler_clip.handle_get_info({"track_index": 1, "clip_slot_index": 2})
+        assert result["name"] == "Hi"
+        assert result["length"] == 2.0
+        assert result["is_midi_clip"] is True
+        assert result["is_audio_clip"] is False
 
     def test_get_info_empty_raises(self, handler_clip: ClipHandler) -> None:
         with pytest.raises(NotFoundError, match="No clip"):
             handler_clip.handle_get_info({"track_index": 1, "clip_slot_index": 1})
+
+
+class TestGetNotes:
+    def test_returns_all_notes(self, handler_clip: ClipHandler) -> None:
+        result = handler_clip.handle_get_notes({"track_index": 1, "clip_slot_index": 2})
+
+        assert result["track_index"] == 1
+        assert result["clip_slot_index"] == 2
+        assert len(result["notes"]) == 3
+        assert result["notes"][0]["note_id"] == 1
+        assert result["notes"][1]["probability"] == 0.5
+        assert result["notes"][2]["velocity_deviation"] == 4.0
+
+    def test_empty_slot_raises_not_found(self, handler_clip: ClipHandler) -> None:
+        with pytest.raises(NotFoundError, match="No clip"):
+            handler_clip.handle_get_notes({"track_index": 1, "clip_slot_index": 1})
+
+    def test_audio_clip_rejected(self) -> None:
+        song = _FakeSong()
+        song.tracks = [
+            _track_with_slots(
+                _Slot(_Clip("Audio", audio=True)),
+                midi=False,
+                audio=True,
+            ),
+        ]
+        handler = ClipHandler(_FakeControlSurface(song))
+
+        with pytest.raises(InvalidParamsError, match="not a MIDI clip"):
+            handler.handle_get_notes({"track_index": 1, "clip_slot_index": 1})
+
+
+class TestAddNotes:
+    def test_add_notes_returns_ids_and_count(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        result = handler_clip.handle_add_notes(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "notes": [
+                    {
+                        "pitch": 72,
+                        "start_time": 3.0,
+                        "duration": 0.5,
+                        "velocity": 90.0,
+                        "mute": False,
+                        "probability": 0.9,
+                    }
+                ],
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "added_count": 1,
+            "note_ids": [4],
+        }
+        notes = song_clip.tracks[0].clip_slots[1].clip.notes
+        assert len(notes) == 4
+        assert notes[-1]["note_id"] == 4
+        assert notes[-1]["probability"] == 0.9
+
+    def test_rejects_malformed_note_payload(self, handler_clip: ClipHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="unexpected keys"):
+            handler_clip.handle_add_notes(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 2,
+                    "notes": [
+                        {
+                            "pitch": 60,
+                            "start_time": 0.0,
+                            "duration": 0.5,
+                            "velocity": 100.0,
+                            "note_id": 99,
+                        }
+                    ],
+                }
+            )
+
+
+class TestRemoveNotes:
+    def test_remove_notes_with_time_span(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        result = handler_clip.handle_remove_notes(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "from_pitch": 60,
+                "pitch_span": 8,
+                "from_time": 0.5,
+                "time_span": 1.0,
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "removed_count": 1,
+        }
+        remaining_ids = [
+            int(note["note_id"])
+            for note in song_clip.tracks[0].clip_slots[1].clip.notes
+        ]
+        assert remaining_ids == [1, 3]
+
+    def test_remove_notes_without_time_span_removes_from_time_onward(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        result = handler_clip.handle_remove_notes(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "from_pitch": 67,
+                "pitch_span": 1,
+                "from_time": 1.0,
+            }
+        )
+
+        assert result["removed_count"] == 1
+        remaining_pitches = [
+            int(note["pitch"]) for note in song_clip.tracks[0].clip_slots[1].clip.notes
+        ]
+        assert remaining_pitches == [60, 64]
+
+
+class TestSetNotes:
+    def test_replaces_all_notes(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        result = handler_clip.handle_set_notes(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "notes": [
+                    {
+                        "pitch": 72,
+                        "start_time": 0.0,
+                        "duration": 1.0,
+                        "velocity": 80.0,
+                        "mute": False,
+                    },
+                    {
+                        "pitch": 76,
+                        "start_time": 1.0,
+                        "duration": 0.5,
+                        "velocity": 90.0,
+                        "mute": True,
+                    },
+                ],
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "removed_count": 3,
+            "added_count": 2,
+            "note_ids": [4, 5],
+        }
+        notes = song_clip.tracks[0].clip_slots[1].clip.notes
+        assert [int(note["pitch"]) for note in notes] == [72, 76]
+        assert [int(note["note_id"]) for note in notes] == [4, 5]
+
+    def test_empty_note_list_clears_clip(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        result = handler_clip.handle_set_notes(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "notes": [],
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "removed_count": 3,
+            "added_count": 0,
+            "note_ids": [],
+        }
+        assert song_clip.tracks[0].clip_slots[1].clip.notes == []
+
+    def test_rejects_bad_region_params(self, handler_clip: ClipHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="must not exceed 128"):
+            handler_clip.handle_remove_notes(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 2,
+                    "from_pitch": 120,
+                    "pitch_span": 16,
+                }
+            )

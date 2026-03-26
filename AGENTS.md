@@ -111,7 +111,22 @@ The Remote Script runs inside Ableton Live 12's embedded Python 3 runtime, which
 - No async/await — the Remote Script is synchronous.
 - Objects are accessed via canonical paths like `live_set tracks 0 devices 1 parameters 2`.
 - **`__pycache__` conflicts** — if using a symlink install, your local Python may write `.pyc` files that Ableton's embedded Python cannot load. Delete `__pycache__` directories under `remote_script/` if Ableton crashes or fails to load the script after local test runs.
-- Use the `ableton-lom` skill (see below) for the full Live Object Model API reference, including reference files by domain (song, track, clip, device, etc.).
+- Treat the `ableton-lom` skill as a broad reference, not an authoritative source for edge-case runtime behavior. For clip note APIs, verify against the running Live version, Ableton's shipped Remote Scripts, and the Ableton log before trusting the skill or generic LOM docs.
+
+### Runtime verification rules
+
+- When Remote Script behavior and reference docs disagree, trust the running Ableton build and capture the exact log evidence.
+- For MIDI note editing, prefer inspecting Ableton's shipped Python bundles first:
+  - `.../MIDI Remote Scripts/_MxDCore/MxDCore.pyc`
+  - `.../MIDI Remote Scripts/APC64/render_to_clip.pyc`
+  - `.../MIDI Remote Scripts/novation/print_to_clip.pyc`
+  - `.../MIDI Remote Scripts/pushbase/note_editor_component.pyc`
+- Validate note-editing changes with a real Live smoke test, not tests alone.
+- Live 12.2.5 note API findings:
+  - `get_all_notes_extended()` returns `MidiNoteVector` / `MidiNote` objects, not plain JSON-ready dicts.
+  - `add_new_notes` expects `Live.Clip.MidiNoteSpecification`-style inputs, not raw dicts.
+  - `add_new_notes` may not return note IDs reliably; infer IDs from before/after clip state when needed.
+  - `probability` and `velocity_deviation` may require an `apply_note_modifications` pass after note creation.
 
 ## Testing
 
@@ -140,10 +155,10 @@ This project includes agent skills in `.agents/skills/`, symlinked to `.cursor/s
 | `python-code-style` | Writing new code, reviewing style, configuring linters, writing docstrings |
 | `python-testing-patterns` | Writing tests, setting up test suites, implementing TDD, mocking dependencies |
 | `python-anti-patterns` | Reviewing code before merge, debugging issues, checking for common mistakes |
-| `ableton-lom` | Working on the Remote Script or any code that interacts with the Live Object Model |
+| `ableton-lom` | Broad Live Object Model reference. Use it for orientation, but verify clip note APIs against shipped Ableton scripts and a live smoke test |
 | `find-skills` | The user asks to find or install new skills |
 
-**How to use:** Read the SKILL.md for the relevant skill before starting work in that domain. Skills are in `.agents/skills/<name>/SKILL.md`. Some skills (like `ableton-lom`) include reference files — only read those when you need deeper detail for a specific domain.
+**How to use:** Read the SKILL.md for the relevant skill before starting work in that domain. Skills are in `.agents/skills/<name>/SKILL.md`. Some skills (like `ableton-lom`) include reference files — only read those when you need deeper detail for a specific domain. If `ableton-lom` conflicts with Ableton's shipped scripts or the running Live log, treat the skill as stale and follow the runtime evidence instead.
 
 **Installing new skills:** `npx skills add <owner/repo@skill> -y`, then symlink into `.cursor/skills/` for Cursor compatibility.
 
