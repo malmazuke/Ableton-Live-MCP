@@ -90,8 +90,7 @@ class ClipHandler(BaseHandler):
             raw_notes = clip.get_all_notes_extended()
         except Exception as exc:
             self._log(
-                "AbletonLiveMCP clip.get_notes get_all_notes_extended failed: "
-                f"{exc}"
+                f"AbletonLiveMCP clip.get_notes get_all_notes_extended failed: {exc}"
             )
             get_notes_extended = getattr(clip, "get_notes_extended", None)
             if not callable(get_notes_extended):
@@ -141,9 +140,7 @@ class ClipHandler(BaseHandler):
             mute = bool(note.mute) if hasattr(note, "mute") else False
             probability = note.probability if hasattr(note, "probability") else None
             velocity_deviation = (
-                note.velocity_deviation
-                if hasattr(note, "velocity_deviation")
-                else None
+                note.velocity_deviation if hasattr(note, "velocity_deviation") else None
             )
 
         result = {
@@ -308,9 +305,7 @@ class ClipHandler(BaseHandler):
                     f"{label}.{name} must be greater than {minimum}"
                 )
             if not exclusive_minimum and float_value < minimum:
-                raise InvalidParamsError(
-                    f"{label}.{name} must be at least {minimum}"
-                )
+                raise InvalidParamsError(f"{label}.{name} must be at least {minimum}")
         if maximum is not None and float_value > maximum:
             raise InvalidParamsError(f"{label}.{name} must be at most {maximum}")
         return float_value
@@ -335,9 +330,7 @@ class ClipHandler(BaseHandler):
         if pitch_span < 1 or pitch_span > 128:
             raise InvalidParamsError("'pitch_span' must be between 1 and 128")
         if from_pitch + pitch_span > 128:
-            raise InvalidParamsError(
-                "'from_pitch' + 'pitch_span' must not exceed 128"
-            )
+            raise InvalidParamsError("'from_pitch' + 'pitch_span' must not exceed 128")
 
         if isinstance(from_time, bool) or not isinstance(from_time, (int, float)):
             raise InvalidParamsError("'from_time' must be a number")
@@ -458,9 +451,7 @@ class ClipHandler(BaseHandler):
         try:
             raw_result = clip.add_new_notes(tuple_payload)
         except Exception as exc:
-            self._log(
-                f"{log_prefix} add_new_notes(tuple(...)) failed: {exc}"
-            )
+            self._log(f"{log_prefix} add_new_notes(tuple(...)) failed: {exc}")
         else:
             note_ids = self._coerce_note_ids(raw_result)
             if note_ids is not None:
@@ -493,9 +484,7 @@ class ClipHandler(BaseHandler):
                 return self._extract_note_ids(after_notes)
             return self._find_added_note_ids(before_notes, after_notes)
         except Exception as exc:
-            self._log(
-                f"{log_prefix} add_new_notes({{'notes': ...}}) failed: {exc}"
-            )
+            self._log(f"{log_prefix} add_new_notes({{'notes': ...}}) failed: {exc}")
 
         set_notes = getattr(clip, "set_notes", None)
         if not callable(set_notes):
@@ -668,10 +657,7 @@ class ClipHandler(BaseHandler):
 
         def _do() -> dict[str, Any]:
             clip, track_index, slot_index = self._resolve_midi_clip(params)
-            notes = [
-                self._serialize_note(note)
-                for note in self._get_clip_notes(clip)
-            ]
+            notes = [self._serialize_note(note) for note in self._get_clip_notes(clip)]
             return {
                 "track_index": track_index,
                 "clip_slot_index": slot_index,

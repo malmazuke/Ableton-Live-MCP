@@ -11,6 +11,8 @@ from mcp_ableton._app import mcp
 from mcp_ableton.protocol import CommandRequest
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from mcp_ableton.connection import AbletonConnection
 
 
@@ -167,7 +169,7 @@ def _normalize_note_input(note: NoteInput | dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_note_inputs(
-    notes: list[NoteInput | dict[str, Any]],
+    notes: Sequence[NoteInput | dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Normalize all note inputs before sending them to the Remote Script."""
     return [_normalize_note_input(note) for note in notes]
