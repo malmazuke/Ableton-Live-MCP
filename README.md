@@ -167,6 +167,13 @@ The communication layer between the MCP server and Ableton's Remote Script is bu
 
 See the [project board](https://github.com/users/malmazuke/projects/1) for detailed progress and planned work.
 
+## Known limitations
+
+- `set_tempo` style commands can change the current song tempo at runtime.
+- Native Arrangement tempo automation on the Main track is **not** currently supported.
+- On Ableton Live 12.2.5, Live exposes `song.tempo` for direct tempo changes, but does not expose a supported public runtime API for creating or editing the Main track's tempo automation envelope.
+- Because of that limitation, Ableton Live MCP does **not** attempt to patch `.als` files, drive the Live UI, or require extra OS permissions just to emulate tempo automation. If Ableton exposes a supported API for this in a future Live release, the feature can be revisited.
+
 **Planned capabilities:**
 
 | Area | Examples |

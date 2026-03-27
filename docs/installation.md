@@ -161,6 +161,13 @@ Add the following:
 
 If everything is working, the assistant will return details about your Live set (tempo, track count, etc.).
 
+## Known runtime limitations
+
+- Live tempo changes are supported through the public runtime API.
+- Native Arrangement tempo automation on the Main track is not currently supported.
+- In Ableton Live 12.2.5, the public Live Object Model exposes `song.tempo` for immediate tempo changes, but it does not expose a supported public runtime API for writing the Main track's tempo automation envelope.
+- Ableton Live MCP intentionally avoids workarounds that would require patching `.als` files, driving the UI, or requesting additional OS permissions. The goal is for the server to work through supported runtime APIs only.
+
 ## Uninstalling
 
 ### Remove the Remote Script
