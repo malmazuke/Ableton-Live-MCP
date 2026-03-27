@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from mcp_ableton.connection import AbletonConnection
+from mcp_ableton.connection import STREAM_LIMIT, AbletonConnection
 from mcp_ableton.protocol import CommandRequest
 
 
@@ -28,6 +28,35 @@ class TestConnectionDefaults:
         assert conn.host == "192.168.1.10"
         assert conn.port == 1234
         assert conn.timeout == 5.0
+
+    async def test_open_connection_uses_large_stream_limit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        captured: dict[str, int] = {}
+
+        class _FakeWriter:
+            def is_closing(self) -> bool:
+                return False
+
+            def close(self) -> None:
+                pass
+
+            async def wait_closed(self) -> None:
+                return None
+
+        async def fake_open_connection(host: str, port: int, *, limit: int):
+            captured["limit"] = limit
+            return asyncio.StreamReader(), _FakeWriter()
+
+        monkeypatch.setattr(asyncio, "open_connection", fake_open_connection)
+
+        conn = AbletonConnection(host="127.0.0.1", port=9877, max_retries=1)
+        await conn.connect()
+
+        assert captured["limit"] == STREAM_LIMIT
+
+        await conn.disconnect()
 
 
 class TestSendCommandRequiresConnection:

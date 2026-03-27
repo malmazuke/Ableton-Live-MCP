@@ -498,6 +498,8 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `set_device_parameter` | `device.set_parameter` |
 | `load_instrument` | `browser.load_instrument` |
 | `get_browser_tree` | `browser.get_tree` |
+| `get_browser_items` | `browser.get_items` |
+| `search_browser` | `browser.search` |
 
 ### Threading model (same as competitors, proven pattern)
 
