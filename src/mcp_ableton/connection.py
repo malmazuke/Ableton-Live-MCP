@@ -16,6 +16,7 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_DELAY = 1.0
 PING_TIMEOUT = 5.0
 BUFFER_SIZE = 65536
+STREAM_LIMIT = 8 * 1024 * 1024
 
 
 class AbletonConnection:
@@ -85,7 +86,11 @@ class AbletonConnection:
         logger.info("Connecting to Ableton at %s:%d", self.host, self.port)
         try:
             self._reader, self._writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port),
+                asyncio.open_connection(
+                    self.host,
+                    self.port,
+                    limit=STREAM_LIMIT,
+                ),
                 timeout=self.timeout,
             )
         except asyncio.TimeoutError:
@@ -171,6 +176,11 @@ class AbletonConnection:
             raise TimeoutError(
                 f"No response from Ableton within {effective_timeout}s"
             ) from None
+        except asyncio.LimitOverrunError:
+            raise RuntimeError(
+                "Response from Ableton exceeded the configured stream limit "
+                f"({STREAM_LIMIT} bytes)"
+            ) from None
         return CommandResponse.from_line(raw_line)
 
     async def ping(self) -> bool:
@@ -196,4 +206,5 @@ __all__ = [
     "DEFAULT_TIMEOUT",
     "BUFFER_SIZE",
     "PING_TIMEOUT",
+    "STREAM_LIMIT",
 ]

@@ -27,12 +27,44 @@ class _EchoHandler:
         return {"tempo": 120.0, "is_playing": False}
 
 
+class _BrowserHandler:
+    def handle_get_tree(self, params):
+        return {
+            "categories": [
+                {
+                    "name": "Instruments",
+                    "uri": "browser:instruments",
+                    "is_folder": True,
+                    "is_loadable": False,
+                    "children": [
+                        {
+                            "name": "Synths",
+                            "uri": "browser:instruments/synths",
+                            "is_folder": True,
+                            "is_loadable": False,
+                            "children": [
+                                {
+                                    "name": "Analog",
+                                    "uri": "browser:instruments/synths/analog",
+                                    "is_folder": False,
+                                    "is_loadable": True,
+                                    "children": [],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+
+
 @pytest.fixture
 def tcp_server():
     """Start a real TcpServer in a background thread on an OS-assigned port."""
     cs = _FakeControlSurface()
     dispatcher = Dispatcher(cs)
     dispatcher.register("session", _EchoHandler())
+    dispatcher.register("browser", _BrowserHandler())
 
     logs: list[str] = []
     server = TcpServer(
@@ -100,5 +132,22 @@ class TestFullRoundTrip:
             resp = await conn.send_command(req)
             assert resp.status == "ok"
             assert resp.id == f"multi-{i}"
+
+        await conn.disconnect()
+
+    async def test_nested_browser_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(command="browser.get_tree", id="browser-1")
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "browser-1"
+        assert resp.result is not None
+        category = resp.result["categories"][0]
+        assert category["name"] == "Instruments"
+        assert category["children"][0]["children"][0]["name"] == "Analog"
 
         await conn.disconnect()
