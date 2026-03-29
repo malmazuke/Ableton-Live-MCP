@@ -332,6 +332,15 @@ These tools match or exceed the original ahujasid feature set, add arrangement v
 
 `NoteInput` accepts both lean format `[pitch, start_time, duration, velocity]` and object format `{pitch, start_time, duration, velocity, mute?, velocity_deviation?, probability?}`.
 
+#### Clip Properties (4 tools)
+
+| Tool | Parameters | Returns | LOM Calls |
+|------|-----------|---------|-----------|
+| `set_clip_loop` | `track_index, clip_index, loop_start: float, loop_end: float, looping: bool = True` | `ClipLoopResult` | `clip.loop_start = ...`, `clip.loop_end = ...`, `clip.looping = ...` |
+| `set_clip_color` | `track_index, clip_index, color_index: int` | `ClipColorResult` | `clip.color_index = color_index` |
+| `get_clip_automation` | `track_index, clip_index, device_index, parameter_index` | `ClipAutomationResult` | `clip.automation_envelope(parameter)`, `envelope.events_in_range(...)` |
+| `set_clip_automation` | `track_index, clip_index, device_index, parameter_index, points: list[ClipAutomationPoint]` | `ClipAutomationSetResult` | `clip.clear_envelope(parameter)`, `clip.create_automation_envelope(parameter)`, `envelope.insert_step(...)` |
+
 #### Device Management (4 tools)
 
 | Tool | Parameters | Returns | LOM Calls |
@@ -508,8 +517,20 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `stop_scene` | `scene.stop` |
 | `set_scene_name` | `scene.set_name` |
 | `create_clip` | `clip.create` |
+| `delete_clip` | `clip.delete` |
+| `duplicate_clip` | `clip.duplicate` |
+| `set_clip_name` | `clip.set_name` |
+| `fire_clip` | `clip.fire` |
+| `stop_clip` | `clip.stop` |
+| `get_clip_info` | `clip.get_info` |
+| `set_clip_loop` | `clip.set_loop` |
+| `set_clip_color` | `clip.set_color` |
 | `add_notes_to_clip` | `clip.add_notes` |
 | `get_clip_notes` | `clip.get_notes` |
+| `remove_notes` | `clip.remove_notes` |
+| `set_clip_notes` | `clip.set_notes` |
+| `get_clip_automation` | `clip.get_automation` |
+| `set_clip_automation` | `clip.set_automation` |
 | `get_arrangement_clips` | `arrangement.get_clips` |
 | `create_arrangement_clip` | `arrangement.create_clip` |
 | `move_arrangement_clip` | `arrangement.move_clip` |

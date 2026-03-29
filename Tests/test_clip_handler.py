@@ -48,10 +48,15 @@ class _Clip:
         self.length = length
         self.is_audio_clip = audio
         self.is_midi_clip = not audio
+        self.loop_start = 0.0
+        self.loop_end = length
+        self.looping = True
+        self.color_index = 0
         self.is_playing = False
         self.is_recording = False
         self._notes: list[dict[str, object]] = []
         self._next_note_id = 1
+        self._automation_envelopes: dict[int, _AutomationEnvelope] = {}
 
         for note in notes or []:
             self._notes.append(dict(note))
@@ -102,6 +107,74 @@ class _Clip:
             note for note in self._notes if int(note["note_id"]) not in note_id_set
         ]
 
+    @property
+    def has_envelopes(self) -> bool:
+        return bool(self._automation_envelopes)
+
+    def automation_envelope(self, parameter) -> _AutomationEnvelope | None:
+        return self._automation_envelopes.get(id(parameter))
+
+    def create_automation_envelope(self, parameter) -> _AutomationEnvelope:
+        envelope = _AutomationEnvelope()
+        self._automation_envelopes[id(parameter)] = envelope
+        return envelope
+
+    def clear_envelope(self, parameter) -> None:
+        self._automation_envelopes.pop(id(parameter), None)
+
+
+class _AutomationEvent:
+    def __init__(
+        self,
+        time: float,
+        value: float | None,
+        step_length: float = 0.0,
+    ) -> None:
+        self.time = time
+        self.value = value
+        self.step_length = step_length
+
+
+class _AutomationEnvelope:
+    def __init__(self, events: list[_AutomationEvent] | None = None) -> None:
+        self.events = list(events or [])
+
+    def events_in_range(self, start: float, end: float):
+        stop = end if end >= start else start
+        return tuple(event for event in self.events if start <= event.time <= stop)
+
+    def insert_step(self, time: float, step_length: float, value: float) -> None:
+        self.events.append(_AutomationEvent(time, value, step_length))
+        self.events.sort(key=lambda event: event.time)
+
+
+class _UnreadableAutomationEnvelope:
+    def __init__(self, events: list[_AutomationEvent] | None = None) -> None:
+        self.events = list(events or [])
+
+    def insert_step(self, time: float, step_length: float, value: float) -> None:
+        self.events.append(_AutomationEvent(time, value, step_length))
+
+
+class _Parameter:
+    def __init__(
+        self,
+        name: str,
+        value: float,
+        minimum: float,
+        maximum: float,
+    ) -> None:
+        self.name = name
+        self.value = value
+        self.min = minimum
+        self.max = maximum
+
+
+class _Device:
+    def __init__(self, name: str, parameters: list[_Parameter]) -> None:
+        self.name = name
+        self.parameters = parameters
+
 
 class _Slot:
     def __init__(self, clip: _Clip | None = None) -> None:
@@ -130,9 +203,16 @@ class _Slot:
         pass
 
 
-def _track_with_slots(*slots: _Slot, midi: bool = True, audio: bool = False) -> _Track:
+def _track_with_slots(
+    *slots: _Slot,
+    midi: bool = True,
+    audio: bool = False,
+    devices: list[_Device] | None = None,
+) -> _Track:
     track = _Track("Track", midi=midi, audio=audio)
     track.clip_slots = list(slots)
+    if devices is not None:
+        track.devices = devices
     return track
 
 
@@ -168,6 +248,22 @@ class _SongWithClipTracks(_FakeSong):
                     )
                 ),
                 _Slot(),
+                devices=[
+                    _Device(
+                        "Utility",
+                        [
+                            _Parameter("Gain", 0.0, -35.0, 35.0),
+                            _Parameter("Mute", 0.0, 0.0, 1.0),
+                        ],
+                    ),
+                    _Device(
+                        "Auto Filter",
+                        [
+                            _Parameter("Device On", 1.0, 0.0, 1.0),
+                            _Parameter("Frequency", 5000.0, 20.0, 20000.0),
+                        ],
+                    ),
+                ],
             ),
         ]
 
@@ -283,6 +379,79 @@ class TestSetNameFireStopGetInfo:
     def test_get_info_empty_raises(self, handler_clip: ClipHandler) -> None:
         with pytest.raises(NotFoundError, match="No clip"):
             handler_clip.handle_get_info({"track_index": 1, "clip_slot_index": 1})
+
+
+class TestLoopAndColor:
+    def test_set_loop_success(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        result = handler_clip.handle_set_loop(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "loop_start": 0.5,
+                "loop_end": 1.5,
+                "looping": True,
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "loop_start": 0.5,
+            "loop_end": 1.5,
+            "looping": True,
+        }
+        clip = song_clip.tracks[0].clip_slots[1].clip
+        assert clip.loop_start == 0.5
+        assert clip.loop_end == 1.5
+        assert clip.looping is True
+
+    def test_set_loop_rejects_invalid_range(self, handler_clip: ClipHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="loop_end"):
+            handler_clip.handle_set_loop(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 2,
+                    "loop_start": 2.0,
+                    "loop_end": 2.0,
+                }
+            )
+
+    def test_set_color_success(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        result = handler_clip.handle_set_color(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "color_index": 11,
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "color_index": 11,
+        }
+        assert song_clip.tracks[0].clip_slots[1].clip.color_index == 11
+
+    def test_set_color_missing_clip_raises_not_found(
+        self,
+        handler_clip: ClipHandler,
+    ) -> None:
+        with pytest.raises(NotFoundError, match="No clip"):
+            handler_clip.handle_set_color(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 1,
+                    "color_index": 3,
+                }
+            )
 
 
 class TestGetNotes:
@@ -488,5 +657,163 @@ class TestSetNotes:
                     "clip_slot_index": 2,
                     "from_pitch": 120,
                     "pitch_span": 16,
+                }
+            )
+
+
+class TestAutomation:
+    def test_get_automation_resolves_device_and_parameter(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        clip = song_clip.tracks[0].clip_slots[1].clip
+        parameter = song_clip.tracks[0].devices[1].parameters[1]
+        clip._automation_envelopes[id(parameter)] = _AutomationEnvelope(
+            [
+                _AutomationEvent(0.0, 250.0),
+                _AutomationEvent(1.0, 5000.0, 0.5),
+            ]
+        )
+
+        result = handler_clip.handle_get_automation(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "device_index": 2,
+                "parameter_index": 2,
+            }
+        )
+
+        assert result["device_name"] == "Auto Filter"
+        assert result["parameter_name"] == "Frequency"
+        assert result["points"] == [
+            {"time": 0.0, "value": 250.0, "step_length": 0.0},
+            {"time": 1.0, "value": 5000.0, "step_length": 0.5},
+        ]
+
+    def test_get_automation_skips_events_without_numeric_value(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        clip = song_clip.tracks[0].clip_slots[1].clip
+        parameter = song_clip.tracks[0].devices[1].parameters[1]
+        clip._automation_envelopes[id(parameter)] = _AutomationEnvelope(
+            [
+                _AutomationEvent(0.0, 250.0),
+                _AutomationEvent(0.5, None),
+            ]
+        )
+
+        result = handler_clip.handle_get_automation(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "device_index": 2,
+                "parameter_index": 2,
+            }
+        )
+
+        assert result["points"] == [{"time": 0.0, "value": 250.0, "step_length": 0.0}]
+
+    def test_get_automation_skips_non_finite_values(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        clip = song_clip.tracks[0].clip_slots[1].clip
+        parameter = song_clip.tracks[0].devices[1].parameters[1]
+        clip._automation_envelopes[id(parameter)] = _AutomationEnvelope(
+            [
+                _AutomationEvent(0.0, 250.0),
+                _AutomationEvent(0.5, float("nan")),
+            ]
+        )
+
+        result = handler_clip.handle_get_automation(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "device_index": 2,
+                "parameter_index": 2,
+            }
+        )
+
+        assert result["points"] == [{"time": 0.0, "value": 250.0, "step_length": 0.0}]
+
+    def test_set_automation_replaces_existing_envelope(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        clip = song_clip.tracks[0].clip_slots[1].clip
+        parameter = song_clip.tracks[0].devices[1].parameters[1]
+        clip._automation_envelopes[id(parameter)] = _AutomationEnvelope(
+            [_AutomationEvent(0.0, 1000.0, 0.25)]
+        )
+
+        result = handler_clip.handle_set_automation(
+            {
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "device_index": 2,
+                "parameter_index": 2,
+                "points": [
+                    {"time": 0.0, "value": 250.0, "step_length": 0.25},
+                    {"time": 1.0, "value": 5000.0, "step_length": 0.5},
+                ],
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "device_index": 2,
+            "parameter_index": 2,
+            "device_name": "Auto Filter",
+            "parameter_name": "Frequency",
+            "point_count": 2,
+        }
+        envelope = clip.automation_envelope(parameter)
+        assert envelope is not None
+        assert [(event.time, event.value) for event in envelope.events] == [
+            (0.0, 250.0),
+            (1.0, 5000.0),
+        ]
+
+    def test_set_automation_rejects_non_numeric_value(
+        self,
+        handler_clip: ClipHandler,
+    ) -> None:
+        with pytest.raises(InvalidParamsError, match="'points\\[1\\]'\\.value"):
+            handler_clip.handle_set_automation(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 2,
+                    "device_index": 2,
+                    "parameter_index": 2,
+                    "points": [{"time": 0.0, "value": "loud"}],
+                }
+            )
+
+    def test_get_automation_raises_when_events_are_unreadable(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        clip = song_clip.tracks[0].clip_slots[1].clip
+        parameter = song_clip.tracks[0].devices[1].parameters[1]
+        clip._automation_envelopes[id(parameter)] = _UnreadableAutomationEnvelope(
+            [_AutomationEvent(0.0, 250.0)]
+        )
+
+        with pytest.raises(RuntimeError, match="readable envelope events"):
+            handler_clip.handle_get_automation(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 2,
+                    "device_index": 2,
+                    "parameter_index": 2,
                 }
             )

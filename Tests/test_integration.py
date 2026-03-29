@@ -169,6 +169,49 @@ class _SceneHandler:
         }
 
 
+class _ClipHandler:
+    def handle_set_loop(self, params):
+        return {
+            "track_index": params["track_index"],
+            "clip_slot_index": params["clip_slot_index"],
+            "loop_start": params["loop_start"],
+            "loop_end": params["loop_end"],
+            "looping": params.get("looping", True),
+        }
+
+    def handle_set_color(self, params):
+        return {
+            "track_index": params["track_index"],
+            "clip_slot_index": params["clip_slot_index"],
+            "color_index": params["color_index"],
+        }
+
+    def handle_get_automation(self, params):
+        return {
+            "track_index": params["track_index"],
+            "clip_slot_index": params["clip_slot_index"],
+            "device_index": params["device_index"],
+            "parameter_index": params["parameter_index"],
+            "device_name": "Auto Filter",
+            "parameter_name": "Frequency",
+            "points": [
+                {"time": 0.0, "value": 250.0, "step_length": 0.0},
+                {"time": 1.0, "value": 5000.0, "step_length": 0.5},
+            ],
+        }
+
+    def handle_set_automation(self, params):
+        return {
+            "track_index": params["track_index"],
+            "clip_slot_index": params["clip_slot_index"],
+            "device_index": params["device_index"],
+            "parameter_index": params["parameter_index"],
+            "device_name": "Auto Filter",
+            "parameter_name": "Frequency",
+            "point_count": len(params["points"]),
+        }
+
+
 @pytest.fixture
 def tcp_server():
     """Start a real TcpServer in a background thread on an OS-assigned port."""
@@ -180,6 +223,7 @@ def tcp_server():
     dispatcher.register("mixer", _MixerHandler())
     dispatcher.register("arrangement", _ArrangementHandler())
     dispatcher.register("scene", _SceneHandler())
+    dispatcher.register("clip", _ClipHandler())
 
     logs: list[str] = []
     server = TcpServer(
@@ -398,5 +442,61 @@ class TestFullRoundTrip:
         assert resp.result["track_index"] is None
         assert resp.result["clips"][0]["name"] == "Verse"
         assert resp.result["clips"][0]["is_midi_clip"] is True
+
+        await conn.disconnect()
+
+    async def test_clip_loop_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="clip.set_loop",
+            params={
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "loop_start": 0.0,
+                "loop_end": 4.0,
+                "looping": True,
+            },
+            id="clip-loop-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "clip-loop-1"
+        assert resp.result == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "loop_start": 0.0,
+            "loop_end": 4.0,
+            "looping": True,
+        }
+
+        await conn.disconnect()
+
+    async def test_clip_automation_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="clip.get_automation",
+            params={
+                "track_index": 1,
+                "clip_slot_index": 2,
+                "device_index": 1,
+                "parameter_index": 2,
+            },
+            id="clip-automation-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "clip-automation-1"
+        assert resp.result is not None
+        assert resp.result["device_name"] == "Auto Filter"
+        assert resp.result["parameter_name"] == "Frequency"
+        assert resp.result["points"][1]["step_length"] == 0.5
 
         await conn.disconnect()
