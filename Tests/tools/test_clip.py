@@ -13,9 +13,14 @@ if TYPE_CHECKING:
 from mcp_ableton._app import mcp
 from mcp_ableton.protocol import CommandError, CommandResponse, ErrorDetail
 from mcp_ableton.tools.clip import (
+    ClipAutomationPoint,
+    ClipAutomationResult,
+    ClipAutomationSetResult,
+    ClipColorResult,
     ClipCreatedResult,
     ClipDuplicatedResult,
     ClipInfo,
+    ClipLoopResult,
     ClipNote,
     ClipNotesResult,
     ClipRenamedResult,
@@ -28,9 +33,13 @@ from mcp_ableton.tools.clip import (
     delete_clip,
     duplicate_clip,
     fire_clip,
+    get_clip_automation,
     get_clip_info,
     get_clip_notes,
     remove_notes,
+    set_clip_automation,
+    set_clip_color,
+    set_clip_loop,
     set_clip_name,
     set_clip_notes,
     stop_clip,
@@ -44,8 +53,12 @@ TOOL_NAMES = [
     "fire_clip",
     "stop_clip",
     "get_clip_info",
+    "set_clip_loop",
+    "set_clip_color",
     "get_clip_notes",
+    "get_clip_automation",
     "add_notes_to_clip",
+    "set_clip_automation",
     "remove_notes",
     "set_clip_notes",
 ]
@@ -103,6 +116,43 @@ CLIP_NOTES_RESULT = {
     ],
 }
 
+CLIP_LOOP_RESULT = {
+    "track_index": 1,
+    "clip_slot_index": 2,
+    "loop_start": 0.0,
+    "loop_end": 4.0,
+    "looping": True,
+}
+
+CLIP_COLOR_RESULT = {
+    "track_index": 1,
+    "clip_slot_index": 2,
+    "color_index": 17,
+}
+
+CLIP_AUTOMATION_RESULT = {
+    "track_index": 1,
+    "clip_slot_index": 2,
+    "device_index": 1,
+    "parameter_index": 2,
+    "device_name": "Auto Filter",
+    "parameter_name": "Frequency",
+    "points": [
+        {"time": 0.0, "value": 250.0},
+        {"time": 1.0, "value": 5000.0, "step_length": 0.5},
+    ],
+}
+
+CLIP_AUTOMATION_SET_RESULT = {
+    "track_index": 1,
+    "clip_slot_index": 2,
+    "device_index": 1,
+    "parameter_index": 2,
+    "device_name": "Auto Filter",
+    "parameter_name": "Frequency",
+    "point_count": 2,
+}
+
 
 class TestToolContracts:
     def _get_tool(self, name: str):
@@ -130,6 +180,22 @@ class TestToolContracts:
         props = tool.parameters["properties"]
         assert props["notes"]["minItems"] == 1
 
+    def test_set_clip_loop_schema(self) -> None:
+        tool = self._get_tool("set_clip_loop")
+        props = tool.parameters["properties"]
+        assert props["loop_start"]["minimum"] == 0.0
+        assert props["looping"]["default"] is True
+
+    def test_set_clip_color_schema(self) -> None:
+        tool = self._get_tool("set_clip_color")
+        props = tool.parameters["properties"]
+        assert props["color_index"]["minimum"] == 0
+
+    def test_set_clip_automation_schema(self) -> None:
+        tool = self._get_tool("set_clip_automation")
+        props = tool.parameters["properties"]
+        assert props["points"]["minItems"] == 1
+
     def test_remove_notes_schema(self) -> None:
         tool = self._get_tool("remove_notes")
         props = tool.parameters["properties"]
@@ -156,6 +222,43 @@ class TestInputValidation:
         model = self._arg_model("create_clip")
         with pytest.raises(ValidationError):
             model(track_index=1, clip_slot_index=1, length=0.0)
+
+    def test_set_clip_loop_rejects_negative_start(self) -> None:
+        model = self._arg_model("set_clip_loop")
+        with pytest.raises(ValidationError):
+            model(
+                track_index=1,
+                clip_slot_index=1,
+                loop_start=-0.1,
+                loop_end=4.0,
+            )
+
+    def test_set_clip_color_rejects_negative_index(self) -> None:
+        model = self._arg_model("set_clip_color")
+        with pytest.raises(ValidationError):
+            model(track_index=1, clip_slot_index=1, color_index=-1)
+
+    def test_set_clip_automation_rejects_empty_point_list(self) -> None:
+        model = self._arg_model("set_clip_automation")
+        with pytest.raises(ValidationError):
+            model(
+                track_index=1,
+                clip_slot_index=1,
+                device_index=1,
+                parameter_index=1,
+                points=[],
+            )
+
+    def test_set_clip_automation_rejects_negative_point_time(self) -> None:
+        model = self._arg_model("set_clip_automation")
+        with pytest.raises(ValidationError):
+            model(
+                track_index=1,
+                clip_slot_index=1,
+                device_index=1,
+                parameter_index=1,
+                points=[{"time": -0.1, "value": 0.5}],
+            )
 
     def test_add_notes_accepts_lean_note_arrays(self) -> None:
         model = self._arg_model("add_notes_to_clip")
@@ -302,6 +405,158 @@ class TestGetClipNotes:
         req = mock_connection.send_command.call_args[0][0]
         assert req.command == "clip.get_notes"
         assert req.params == {"track_index": 1, "clip_slot_index": 2}
+
+
+class TestSetClipLoop:
+    async def test_sends_correct_command(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(CLIP_LOOP_RESULT)
+
+        result = await set_clip_loop(
+            ctx=mock_context,
+            track_index=1,
+            clip_slot_index=2,
+            loop_start=0.0,
+            loop_end=4.0,
+        )
+
+        assert isinstance(result, ClipLoopResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "clip.set_loop"
+        assert req.params == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "loop_start": 0.0,
+            "loop_end": 4.0,
+            "looping": True,
+        }
+
+    async def test_rejects_invalid_range_before_send(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        with pytest.raises(ValueError, match="loop_end"):
+            await set_clip_loop(
+                ctx=mock_context,
+                track_index=1,
+                clip_slot_index=2,
+                loop_start=4.0,
+                loop_end=4.0,
+            )
+
+        mock_connection.send_command.assert_not_called()
+
+
+class TestSetClipColor:
+    async def test_returns_color_result(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(CLIP_COLOR_RESULT)
+
+        result = await set_clip_color(
+            ctx=mock_context,
+            track_index=1,
+            clip_slot_index=2,
+            color_index=17,
+        )
+
+        assert isinstance(result, ClipColorResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "clip.set_color"
+        assert req.params == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "color_index": 17,
+        }
+
+
+class TestClipAutomation:
+    async def test_get_clip_automation_returns_points(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(CLIP_AUTOMATION_RESULT)
+
+        result = await get_clip_automation(
+            ctx=mock_context,
+            track_index=1,
+            clip_slot_index=2,
+            device_index=1,
+            parameter_index=2,
+        )
+
+        assert isinstance(result, ClipAutomationResult)
+        assert isinstance(result.points[0], ClipAutomationPoint)
+        assert result.points[0].step_length == 0.0
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "clip.get_automation"
+        assert req.params == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "device_index": 1,
+            "parameter_index": 2,
+        }
+
+    async def test_set_clip_automation_sends_points(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            CLIP_AUTOMATION_SET_RESULT
+        )
+
+        result = await set_clip_automation(
+            ctx=mock_context,
+            track_index=1,
+            clip_slot_index=2,
+            device_index=1,
+            parameter_index=2,
+            points=[
+                {"time": 0.0, "value": 250.0},
+                {"time": 1.0, "value": 5000.0, "step_length": 0.5},
+            ],
+        )
+
+        assert isinstance(result, ClipAutomationSetResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "clip.set_automation"
+        assert req.params == {
+            "track_index": 1,
+            "clip_slot_index": 2,
+            "device_index": 1,
+            "parameter_index": 2,
+            "points": [
+                {"time": 0.0, "value": 250.0, "step_length": 0.0},
+                {"time": 1.0, "value": 5000.0, "step_length": 0.5},
+            ],
+        }
+
+    async def test_get_clip_automation_raises_on_error(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="NOT_FOUND",
+            message="Parameter 2 does not exist",
+        )
+
+        with pytest.raises(CommandError, match="NOT_FOUND"):
+            await get_clip_automation(
+                ctx=mock_context,
+                track_index=1,
+                clip_slot_index=2,
+                device_index=1,
+                parameter_index=2,
+            )
 
 
 class TestAddNotesToClip:
@@ -595,6 +850,11 @@ class TestDeleteDuplicateFireStop:
 
 
 class TestResponseModels:
+    def test_clip_automation_accepts_valid(self) -> None:
+        automation = ClipAutomationResult.model_validate(CLIP_AUTOMATION_RESULT)
+        assert automation.parameter_name == "Frequency"
+        assert automation.points[1].step_length == 0.5
+
     def test_clip_info_rejects_missing_fields(self) -> None:
         with pytest.raises(ValidationError):
             ClipInfo.model_validate({"track_index": 1})

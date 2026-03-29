@@ -68,6 +68,24 @@ class ClipInfo(BaseModel):
     is_recording: bool
 
 
+class ClipLoopResult(BaseModel):
+    """Result of ``set_clip_loop``."""
+
+    track_index: int
+    clip_slot_index: int
+    loop_start: float
+    loop_end: float
+    looping: bool
+
+
+class ClipColorResult(BaseModel):
+    """Result of ``set_clip_color``."""
+
+    track_index: int
+    clip_slot_index: int
+    color_index: int
+
+
 class NoteObjectInput(BaseModel):
     """Structured note input accepted by note-editing tools."""
 
@@ -97,6 +115,40 @@ class ClipNote(BaseModel):
     mute: bool
     probability: float | None = None
     velocity_deviation: float | None = None
+
+
+class ClipAutomationPoint(BaseModel):
+    """A single clip automation point or step."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    time: float = Field(ge=0.0)
+    value: float
+    step_length: float = Field(default=0.0, ge=0.0)
+
+
+class ClipAutomationResult(BaseModel):
+    """Clip automation points for a specific device parameter."""
+
+    track_index: int
+    clip_slot_index: int
+    device_index: int
+    parameter_index: int
+    device_name: str
+    parameter_name: str
+    points: list[ClipAutomationPoint]
+
+
+class ClipAutomationSetResult(BaseModel):
+    """Result of ``set_clip_automation``."""
+
+    track_index: int
+    clip_slot_index: int
+    device_index: int
+    parameter_index: int
+    device_name: str
+    parameter_name: str
+    point_count: int
 
 
 class ClipNotesResult(BaseModel):
@@ -343,6 +395,77 @@ async def get_clip_info(
 
 
 @mcp.tool()
+async def set_clip_loop(
+    ctx: Context,
+    track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
+    clip_slot_index: ClipSlotIndex,
+    loop_start: Annotated[
+        float,
+        Field(
+            description="Loop start in clip beat time (must be >= 0).",
+            ge=0.0,
+        ),
+    ],
+    loop_end: Annotated[
+        float,
+        Field(
+            description="Loop end in clip beat time (must be > loop_start).",
+            gt=0.0,
+        ),
+    ],
+    looping: Annotated[
+        bool,
+        Field(description="Whether clip looping should be enabled."),
+    ] = True,
+) -> ClipLoopResult:
+    """Set loop start/end and loop enabled state for a session clip."""
+    if loop_end <= loop_start:
+        raise ValueError("'loop_end' must be greater than 'loop_start'")
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="clip.set_loop",
+        params={
+            "track_index": track_index,
+            "clip_slot_index": clip_slot_index,
+            "loop_start": loop_start,
+            "loop_end": loop_end,
+            "looping": looping,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ClipLoopResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def set_clip_color(
+    ctx: Context,
+    track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
+    clip_slot_index: ClipSlotIndex,
+    color_index: Annotated[
+        int,
+        Field(
+            description="Clip color index (must be >= 0).",
+            ge=0,
+        ),
+    ],
+) -> ClipColorResult:
+    """Set the color index for a session clip."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="clip.set_color",
+        params={
+            "track_index": track_index,
+            "clip_slot_index": clip_slot_index,
+            "color_index": color_index,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ClipColorResult.model_validate(response.result)
+
+
+@mcp.tool()
 async def get_clip_notes(
     ctx: Context,
     track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
@@ -360,6 +483,36 @@ async def get_clip_notes(
     response = await connection.send_command(request)
     response.raise_on_error()
     return ClipNotesResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def get_clip_automation(
+    ctx: Context,
+    track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
+    clip_slot_index: ClipSlotIndex,
+    device_index: Annotated[
+        int,
+        Field(description="1-based device index on the track.", ge=1),
+    ],
+    parameter_index: Annotated[
+        int,
+        Field(description="1-based parameter index on the device.", ge=1),
+    ],
+) -> ClipAutomationResult:
+    """Get clip automation points for a device parameter on the host track."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="clip.get_automation",
+        params={
+            "track_index": track_index,
+            "clip_slot_index": clip_slot_index,
+            "device_index": device_index,
+            "parameter_index": parameter_index,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ClipAutomationResult.model_validate(response.result)
 
 
 @mcp.tool()
@@ -393,6 +546,50 @@ async def add_notes_to_clip(
     response = await connection.send_command(request)
     response.raise_on_error()
     return NotesAddedResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def set_clip_automation(
+    ctx: Context,
+    track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
+    clip_slot_index: ClipSlotIndex,
+    device_index: Annotated[
+        int,
+        Field(description="1-based device index on the track.", ge=1),
+    ],
+    parameter_index: Annotated[
+        int,
+        Field(description="1-based parameter index on the device.", ge=1),
+    ],
+    points: Annotated[
+        list[ClipAutomationPoint],
+        Field(
+            description=(
+                "Replacement automation points. Each point includes time, value, "
+                "and optional step_length."
+            ),
+            min_length=1,
+        ),
+    ],
+) -> ClipAutomationSetResult:
+    """Replace clip automation for a device parameter with the supplied points."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="clip.set_automation",
+        params={
+            "track_index": track_index,
+            "clip_slot_index": clip_slot_index,
+            "device_index": device_index,
+            "parameter_index": parameter_index,
+            "points": [
+                ClipAutomationPoint.model_validate(point).model_dump(mode="python")
+                for point in points
+            ],
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ClipAutomationSetResult.model_validate(response.result)
 
 
 @mcp.tool()
@@ -483,10 +680,15 @@ async def set_clip_notes(
 
 
 __all__ = [
+    "ClipAutomationPoint",
+    "ClipAutomationResult",
+    "ClipAutomationSetResult",
+    "ClipColorResult",
     "ClipNote",
     "ClipCreatedResult",
     "ClipDuplicatedResult",
     "ClipInfo",
+    "ClipLoopResult",
     "ClipNotesResult",
     "ClipRenamedResult",
     "ClipSlotResult",
@@ -501,9 +703,13 @@ __all__ = [
     "delete_clip",
     "duplicate_clip",
     "fire_clip",
+    "get_clip_automation",
     "get_clip_info",
     "get_clip_notes",
     "remove_notes",
+    "set_clip_automation",
+    "set_clip_color",
+    "set_clip_loop",
     "set_clip_notes",
     "set_clip_name",
     "stop_clip",
