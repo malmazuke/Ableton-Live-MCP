@@ -100,6 +100,31 @@ class ClipColorResult(BaseModel):
     color_index: int
 
 
+class ClipGainResult(BaseModel):
+    """Result of ``set_clip_gain``."""
+
+    track_index: int
+    clip_slot_index: int
+    gain: float
+    gain_display_string: str
+
+
+class ClipPitchResult(BaseModel):
+    """Result of ``set_clip_pitch``."""
+
+    track_index: int
+    clip_slot_index: int
+    semitones: int
+
+
+class ClipWarpModeResult(BaseModel):
+    """Result of ``set_clip_warp_mode``."""
+
+    track_index: int
+    clip_slot_index: int
+    warp_mode: int
+
+
 AbsoluteLocalFilePath = Annotated[
     str,
     AfterValidator(_validate_absolute_local_file_path),
@@ -498,6 +523,97 @@ async def set_clip_color(
 
 
 @mcp.tool()
+async def set_clip_gain(
+    ctx: Context,
+    track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
+    clip_slot_index: ClipSlotIndex,
+    gain: Annotated[
+        float,
+        Field(
+            description=(
+                "Audio clip gain using Live's native normalized 0.0-1.0 range."
+            ),
+            ge=0.0,
+            le=1.0,
+        ),
+    ],
+) -> ClipGainResult:
+    """Set a session audio clip's gain using Live's native normalized range."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="clip.set_gain",
+        params={
+            "track_index": track_index,
+            "clip_slot_index": clip_slot_index,
+            "gain": gain,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ClipGainResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def set_clip_pitch(
+    ctx: Context,
+    track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
+    clip_slot_index: ClipSlotIndex,
+    semitones: Annotated[
+        int,
+        Field(
+            description="Audio clip coarse transpose in semitones (-48 to 48).",
+            ge=-48,
+            le=48,
+        ),
+    ],
+) -> ClipPitchResult:
+    """Set coarse semitone transpose for a session audio clip."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="clip.set_pitch",
+        params={
+            "track_index": track_index,
+            "clip_slot_index": clip_slot_index,
+            "semitones": semitones,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ClipPitchResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def set_clip_warp_mode(
+    ctx: Context,
+    track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
+    clip_slot_index: ClipSlotIndex,
+    warp_mode: Annotated[
+        int,
+        Field(
+            description=(
+                "Integer warp mode selector. Valid values depend on the clip's "
+                "runtime-supported available warp modes."
+            ),
+            ge=0,
+        ),
+    ],
+) -> ClipWarpModeResult:
+    """Set the warp mode for a session audio clip."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="clip.set_warp_mode",
+        params={
+            "track_index": track_index,
+            "clip_slot_index": clip_slot_index,
+            "warp_mode": warp_mode,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ClipWarpModeResult.model_validate(response.result)
+
+
+@mcp.tool()
 async def import_audio_to_session(
     ctx: Context,
     track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
@@ -739,14 +855,17 @@ __all__ = [
     "ClipAutomationResult",
     "ClipAutomationSetResult",
     "ClipColorResult",
+    "ClipGainResult",
     "ClipNote",
     "ClipCreatedResult",
     "ClipDuplicatedResult",
     "ClipInfo",
     "ClipLoopResult",
     "ClipNotesResult",
+    "ClipPitchResult",
     "ClipRenamedResult",
     "ClipSlotResult",
+    "ClipWarpModeResult",
     "LeanNoteInput",
     "NoteInput",
     "NoteObjectInput",
@@ -766,8 +885,11 @@ __all__ = [
     "remove_notes",
     "set_clip_automation",
     "set_clip_color",
+    "set_clip_gain",
     "set_clip_loop",
     "set_clip_notes",
     "set_clip_name",
+    "set_clip_pitch",
+    "set_clip_warp_mode",
     "stop_clip",
 ]

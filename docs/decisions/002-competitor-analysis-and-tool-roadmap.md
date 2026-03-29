@@ -429,9 +429,13 @@ These tools cover niche but valuable capabilities. Prioritized based on communit
 - `get_available_routing` — available inputs/outputs for a track
 
 #### Audio Clip Operations (3 tools)
-- `set_clip_gain` — audio clip gain in dB
+- `set_clip_gain` — audio clip gain using Live's native normalized `0.0..1.0` range, plus `gain_display_string` for display
 - `set_clip_pitch` — audio clip pitch in semitones
 - `set_clip_warp_mode` — warp mode selection
+
+Runtime note for Live 12.2.5: shipped Remote Script bytecode clamps `clip.gain`
+directly to `0.0..1.0` and exposes a separate `gain_display_string`, so the MCP
+surface must follow that contract instead of claiming dB input.
 
 #### Markers & Navigation (3 tools)
 - `get_locators` — list cue points
@@ -533,6 +537,9 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `get_clip_info` | `clip.get_info` |
 | `set_clip_loop` | `clip.set_loop` |
 | `set_clip_color` | `clip.set_color` |
+| `set_clip_gain` | `clip.set_gain` |
+| `set_clip_pitch` | `clip.set_pitch` |
+| `set_clip_warp_mode` | `clip.set_warp_mode` |
 | `add_notes_to_clip` | `clip.add_notes` |
 | `get_clip_notes` | `clip.get_notes` |
 | `remove_notes` | `clip.remove_notes` |

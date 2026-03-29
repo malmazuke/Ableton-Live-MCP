@@ -19,12 +19,15 @@ from mcp_ableton.tools.clip import (
     ClipColorResult,
     ClipCreatedResult,
     ClipDuplicatedResult,
+    ClipGainResult,
     ClipInfo,
     ClipLoopResult,
     ClipNote,
     ClipNotesResult,
+    ClipPitchResult,
     ClipRenamedResult,
     ClipSlotResult,
+    ClipWarpModeResult,
     NotesAddedResult,
     NotesRemovedResult,
     NotesSetResult,
@@ -41,9 +44,12 @@ from mcp_ableton.tools.clip import (
     remove_notes,
     set_clip_automation,
     set_clip_color,
+    set_clip_gain,
     set_clip_loop,
     set_clip_name,
     set_clip_notes,
+    set_clip_pitch,
+    set_clip_warp_mode,
     stop_clip,
 )
 
@@ -58,6 +64,9 @@ TOOL_NAMES = [
     "import_audio_to_session",
     "set_clip_loop",
     "set_clip_color",
+    "set_clip_gain",
+    "set_clip_pitch",
+    "set_clip_warp_mode",
     "get_clip_notes",
     "get_clip_automation",
     "add_notes_to_clip",
@@ -133,6 +142,25 @@ CLIP_COLOR_RESULT = {
     "color_index": 17,
 }
 
+CLIP_GAIN_RESULT = {
+    "track_index": 2,
+    "clip_slot_index": 1,
+    "gain": 0.75,
+    "gain_display_string": "-6.0 dB",
+}
+
+CLIP_PITCH_RESULT = {
+    "track_index": 2,
+    "clip_slot_index": 1,
+    "semitones": -7,
+}
+
+CLIP_WARP_MODE_RESULT = {
+    "track_index": 2,
+    "clip_slot_index": 1,
+    "warp_mode": 2,
+}
+
 SESSION_AUDIO_IMPORT_RESULT = {
     "track_index": 2,
     "clip_slot_index": 3,
@@ -203,6 +231,23 @@ class TestToolContracts:
         props = tool.parameters["properties"]
         assert props["color_index"]["minimum"] == 0
 
+    def test_set_clip_gain_schema(self) -> None:
+        tool = self._get_tool("set_clip_gain")
+        props = tool.parameters["properties"]
+        assert props["gain"]["minimum"] == 0.0
+        assert props["gain"]["maximum"] == 1.0
+
+    def test_set_clip_pitch_schema(self) -> None:
+        tool = self._get_tool("set_clip_pitch")
+        props = tool.parameters["properties"]
+        assert props["semitones"]["minimum"] == -48
+        assert props["semitones"]["maximum"] == 48
+
+    def test_set_clip_warp_mode_schema(self) -> None:
+        tool = self._get_tool("set_clip_warp_mode")
+        props = tool.parameters["properties"]
+        assert props["warp_mode"]["minimum"] == 0
+
     def test_import_audio_to_session_schema(self) -> None:
         tool = self._get_tool("import_audio_to_session")
         props = tool.parameters["properties"]
@@ -256,6 +301,26 @@ class TestInputValidation:
         model = self._arg_model("set_clip_color")
         with pytest.raises(ValidationError):
             model(track_index=1, clip_slot_index=1, color_index=-1)
+
+    @pytest.mark.parametrize("gain", [-0.1, 1.1])
+    def test_set_clip_gain_rejects_out_of_range_gain(self, gain: float) -> None:
+        model = self._arg_model("set_clip_gain")
+        with pytest.raises(ValidationError):
+            model(track_index=1, clip_slot_index=1, gain=gain)
+
+    @pytest.mark.parametrize("semitones", [-49, 49])
+    def test_set_clip_pitch_rejects_out_of_range_semitones(
+        self,
+        semitones: int,
+    ) -> None:
+        model = self._arg_model("set_clip_pitch")
+        with pytest.raises(ValidationError):
+            model(track_index=1, clip_slot_index=1, semitones=semitones)
+
+    def test_set_clip_warp_mode_rejects_negative_mode(self) -> None:
+        model = self._arg_model("set_clip_warp_mode")
+        with pytest.raises(ValidationError):
+            model(track_index=1, clip_slot_index=1, warp_mode=-1)
 
     def test_import_audio_to_session_rejects_relative_file_path(self) -> None:
         model = self._arg_model("import_audio_to_session")
@@ -498,6 +563,96 @@ class TestSetClipColor:
             "clip_slot_index": 2,
             "color_index": 17,
         }
+
+
+class TestClipAudioOperations:
+    async def test_set_clip_gain_returns_gain_result(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(CLIP_GAIN_RESULT)
+
+        result = await set_clip_gain(
+            ctx=mock_context,
+            track_index=2,
+            clip_slot_index=1,
+            gain=0.75,
+        )
+
+        assert isinstance(result, ClipGainResult)
+        assert result.gain_display_string == "-6.0 dB"
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "clip.set_gain"
+        assert req.params == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "gain": 0.75,
+        }
+
+    async def test_set_clip_pitch_returns_pitch_result(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(CLIP_PITCH_RESULT)
+
+        result = await set_clip_pitch(
+            ctx=mock_context,
+            track_index=2,
+            clip_slot_index=1,
+            semitones=-7,
+        )
+
+        assert isinstance(result, ClipPitchResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "clip.set_pitch"
+        assert req.params == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "semitones": -7,
+        }
+
+    async def test_set_clip_warp_mode_returns_result(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(CLIP_WARP_MODE_RESULT)
+
+        result = await set_clip_warp_mode(
+            ctx=mock_context,
+            track_index=2,
+            clip_slot_index=1,
+            warp_mode=2,
+        )
+
+        assert isinstance(result, ClipWarpModeResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "clip.set_warp_mode"
+        assert req.params == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "warp_mode": 2,
+        }
+
+    async def test_set_clip_gain_raises_on_error(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="Clip slot 1 on track 2 is not an audio clip",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await set_clip_gain(
+                ctx=mock_context,
+                track_index=2,
+                clip_slot_index=1,
+                gain=0.5,
+            )
 
 
 class TestClipAutomation:
