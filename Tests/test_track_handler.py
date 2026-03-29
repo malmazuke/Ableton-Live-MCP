@@ -44,17 +44,30 @@ class _Track:
         audio: bool = False,
         can_be_armed: bool = True,
         routing_supported: bool = True,
+        clip_slots: list[_Slot] | None = None,
+        device_names: list[str] | None = None,
+        supports_mute: bool = True,
+        supports_solo: bool = True,
+        supports_arm: bool = True,
     ) -> None:
         self.name = name
         self.has_audio_input = audio
         self.has_midi_input = midi
-        self.mute = False
-        self.solo = False
-        self.arm = False
-        self.can_be_armed = can_be_armed
+        if supports_mute:
+            self.mute = False
+        if supports_solo:
+            self.solo = False
+        if supports_arm:
+            self.arm = False
+        if can_be_armed:
+            self.can_be_armed = can_be_armed
         self.mixer_device = _Mixer()
-        self.devices = [_Device("Device A")]
-        self.clip_slots = [_Slot(False), _Slot(True)]
+        names = device_names if device_names is not None else ["Device A"]
+        self.devices = [_Device(name) for name in names]
+        if clip_slots is None:
+            self.clip_slots = [_Slot(False), _Slot(True)]
+        else:
+            self.clip_slots = clip_slots
 
         if routing_supported:
             self._available_input_routing_types = [
@@ -165,6 +178,27 @@ class _Track:
 class _FakeSong:
     def __init__(self, tracks: list[_Track] | None = None) -> None:
         self.tracks = tracks or [_Track("One"), _Track("Two")]
+        self.return_tracks = [
+            _Track(
+                "Return A",
+                midi=False,
+                audio=False,
+                can_be_armed=False,
+                clip_slots=[],
+                device_names=[],
+            )
+        ]
+        self.master_track = _Track(
+            "Master",
+            midi=False,
+            audio=False,
+            can_be_armed=False,
+            clip_slots=[],
+            device_names=[],
+            supports_mute=False,
+            supports_solo=False,
+            supports_arm=False,
+        )
 
     def create_midi_track(self, index: int) -> None:
         t = _Track("New MIDI", midi=True)
@@ -225,18 +259,45 @@ class TestGetInfo:
         result = handler.handle_get_info({"track_index": 1})
 
         assert result["name"] == "One"
+        assert result["track_scope"] == "main"
         assert result["track_index"] == 1
         assert result["is_midi_track"] is True
         assert result["device_names"] == ["Device A"]
         assert result["clip_slot_has_clip"] == [False, True]
 
+    def test_returns_return_track_info(self, handler: TrackHandler) -> None:
+        result = handler.handle_get_info({"track_scope": "return", "track_index": 1})
+
+        assert result["track_scope"] == "return"
+        assert result["track_index"] == 1
+        assert result["device_names"] == []
+        assert result["clip_slot_has_clip"] == []
+
+    def test_returns_master_track_info(self, handler: TrackHandler) -> None:
+        result = handler.handle_get_info({"track_scope": "master"})
+
+        assert result["track_scope"] == "master"
+        assert result["track_index"] is None
+        assert result["device_names"] == []
+        assert result["clip_slot_has_clip"] == []
+
     def test_raises_not_found(self, handler: TrackHandler) -> None:
         with pytest.raises(NotFoundError, match="Track 99"):
             handler.handle_get_info({"track_index": 99})
 
+    def test_returns_not_found_for_missing_return_track(
+        self, handler: TrackHandler
+    ) -> None:
+        with pytest.raises(NotFoundError, match="Return track 99"):
+            handler.handle_get_info({"track_scope": "return", "track_index": 99})
+
     def test_missing_track_index(self, handler: TrackHandler) -> None:
         with pytest.raises(InvalidParamsError, match="track_index"):
             handler.handle_get_info({})
+
+    def test_master_rejects_track_index(self, handler: TrackHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="track_index"):
+            handler.handle_get_info({"track_scope": "master", "track_index": 1})
 
 
 class TestRouting:
@@ -432,24 +493,64 @@ class TestDeleteDuplicate:
 
 class TestSetters:
     def test_set_name(self, handler: TrackHandler, song: _FakeSong) -> None:
-        handler.handle_set_name({"track_index": 1, "name": "Renamed"})
+        result = handler.handle_set_name({"track_index": 1, "name": "Renamed"})
 
+        assert result == {"track_scope": "main", "track_index": 1}
         assert song.tracks[0].name == "Renamed"
 
     def test_set_mute(self, handler: TrackHandler, song: _FakeSong) -> None:
-        handler.handle_set_mute({"track_index": 1, "mute": True})
+        result = handler.handle_set_mute({"track_index": 1, "mute": True})
 
+        assert result == {"track_scope": "main", "track_index": 1}
         assert song.tracks[0].mute is True
+
+    def test_set_mute_supports_return_track(self, handler: TrackHandler) -> None:
+        song = handler._song
+        result = handler.handle_set_mute(
+            {"track_scope": "return", "track_index": 1, "mute": True}
+        )
+
+        assert result == {"track_scope": "return", "track_index": 1}
+        assert song.return_tracks[0].mute is True
 
     def test_set_mute_requires_bool(self, handler: TrackHandler) -> None:
         with pytest.raises(InvalidParamsError, match="mute"):
             handler.handle_set_mute({"track_index": 1, "mute": "yes"})
+
+    def test_set_mute_requires_track_index_for_return(
+        self, handler: TrackHandler
+    ) -> None:
+        with pytest.raises(InvalidParamsError, match="track_index"):
+            handler.handle_set_mute({"track_scope": "return", "mute": True})
+
+    def test_set_mute_rejects_master(self, handler: TrackHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="does not support mute"):
+            handler.handle_set_mute({"track_scope": "master", "mute": True})
+
+    def test_set_solo(self, handler: TrackHandler, song: _FakeSong) -> None:
+        result = handler.handle_set_solo({"track_index": 2, "solo": True})
+
+        assert result == {"track_scope": "main", "track_index": 2}
+        assert song.tracks[1].solo is True
 
     def test_set_arm_unarmable(self, handler: TrackHandler, song: _FakeSong) -> None:
         song.tracks[0].can_be_armed = False
 
         with pytest.raises(InvalidParamsError, match="cannot be armed"):
             handler.handle_set_arm({"track_index": 1, "arm": True})
+
+    def test_set_arm_rejects_return_and_master(self, handler: TrackHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="cannot be armed"):
+            handler.handle_set_arm(
+                {"track_scope": "return", "track_index": 1, "arm": True}
+            )
+
+        with pytest.raises(InvalidParamsError, match="cannot be armed"):
+            handler.handle_set_arm({"track_scope": "master", "arm": True})
+
+    def test_set_solo_rejects_master(self, handler: TrackHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="does not support solo"):
+            handler.handle_set_solo({"track_scope": "master", "solo": True})
 
 
 class TestDispatcherNotFoundIntegration:
@@ -463,6 +564,16 @@ class TestDispatcherNotFoundIntegration:
         assert resp["error"]["code"] == "NOT_FOUND"
         assert "10" in resp["error"]["message"]
 
+    def test_track_get_info_master_via_dispatcher(self, song: _FakeSong) -> None:
+        d = Dispatcher(_FakeControlSurface(song))
+        d.register("track", TrackHandler(_FakeControlSurface(song)))
+
+        resp = d.dispatch("track.get_info", {"track_scope": "master"}, "r1m")
+
+        assert resp["status"] == "ok"
+        assert resp["result"]["track_scope"] == "master"
+        assert resp["result"]["track_index"] is None
+
     def test_track_get_available_routing_invalid_params_via_dispatcher(self) -> None:
         song = _FakeSong([_Track("No Routing", routing_supported=False)])
         d = Dispatcher(_FakeControlSurface(song))
@@ -473,3 +584,16 @@ class TestDispatcherNotFoundIntegration:
         assert resp["status"] == "error"
         assert resp["error"]["code"] == "INVALID_PARAMS"
         assert "available input routing types" in resp["error"]["message"]
+
+    def test_track_set_mute_master_rejected_via_dispatcher(self) -> None:
+        song = _FakeSong()
+        d = Dispatcher(_FakeControlSurface(song))
+        d.register("track", TrackHandler(_FakeControlSurface(song)))
+
+        resp = d.dispatch(
+            "track.set_mute", {"track_scope": "master", "mute": True}, "r3"
+        )
+
+        assert resp["status"] == "error"
+        assert resp["error"]["code"] == "INVALID_PARAMS"
+        assert "does not support mute" in resp["error"]["message"]

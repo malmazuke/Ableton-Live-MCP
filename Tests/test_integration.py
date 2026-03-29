@@ -11,7 +11,7 @@ from __future__ import annotations
 import threading
 
 import pytest
-from AbletonLiveMCP.dispatcher import Dispatcher
+from AbletonLiveMCP.dispatcher import Dispatcher, InvalidParamsError
 from AbletonLiveMCP.tcp_server import TcpServer
 
 from mcp_ableton.connection import AbletonConnection
@@ -358,6 +358,56 @@ class _GrooveHandler:
 
 
 class _TrackHandler:
+    def handle_get_info(self, params):
+        scope = params.get("track_scope", "main")
+        if scope == "master":
+            return {
+                "name": "Master",
+                "track_scope": "master",
+                "track_index": None,
+                "is_audio_track": False,
+                "is_midi_track": False,
+                "mute": False,
+                "solo": False,
+                "arm": False,
+                "volume": 0.88,
+                "pan": 0.0,
+                "device_names": [],
+                "clip_slot_has_clip": [],
+            }
+
+        track_index = params["track_index"]
+        if scope == "return":
+            return {
+                "name": "Return A",
+                "track_scope": "return",
+                "track_index": track_index,
+                "is_audio_track": False,
+                "is_midi_track": False,
+                "mute": True,
+                "solo": False,
+                "arm": False,
+                "volume": 0.61,
+                "pan": -0.15,
+                "device_names": [],
+                "clip_slot_has_clip": [],
+            }
+
+        return {
+            "name": "Track 1",
+            "track_scope": "main",
+            "track_index": track_index,
+            "is_audio_track": False,
+            "is_midi_track": True,
+            "mute": False,
+            "solo": False,
+            "arm": False,
+            "volume": 0.75,
+            "pan": 0.1,
+            "device_names": ["Instrument Rack"],
+            "clip_slot_has_clip": [False, True],
+        }
+
     def handle_get_routing(self, params):
         return {
             "track_index": params["track_index"],
@@ -377,6 +427,14 @@ class _TrackHandler:
                 "identifier": "Master/Stereo",
                 "display_name": "Stereo",
             },
+        }
+
+    def handle_set_mute(self, params):
+        if params.get("track_scope") == "master":
+            raise InvalidParamsError("Master track does not support mute")
+        return {
+            "track_scope": params.get("track_scope", "main"),
+            "track_index": params.get("track_index"),
         }
 
 
@@ -616,6 +674,78 @@ class TestFullRoundTrip:
                 "display_name": "Stereo",
             },
         }
+
+        await conn.disconnect()
+
+    async def test_scoped_track_info_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        main_resp = await conn.send_command(
+            CommandRequest(
+                command="track.get_info",
+                params={"track_index": 1},
+                id="track-info-main",
+            )
+        )
+        return_resp = await conn.send_command(
+            CommandRequest(
+                command="track.get_info",
+                params={"track_scope": "return", "track_index": 1},
+                id="track-info-return",
+            )
+        )
+        master_resp = await conn.send_command(
+            CommandRequest(
+                command="track.get_info",
+                params={"track_scope": "master"},
+                id="track-info-master",
+            )
+        )
+
+        assert main_resp.status == "ok"
+        assert main_resp.result["track_scope"] == "main"
+        assert main_resp.result["track_index"] == 1
+        assert return_resp.status == "ok"
+        assert return_resp.result["track_scope"] == "return"
+        assert return_resp.result["clip_slot_has_clip"] == []
+        assert master_resp.status == "ok"
+        assert master_resp.result["track_scope"] == "master"
+        assert master_resp.result["track_index"] is None
+
+        await conn.disconnect()
+
+    async def test_scoped_track_mutation_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="track.set_mute",
+            params={"track_scope": "return", "track_index": 1, "mute": True},
+            id="track-mute-return",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "track-mute-return"
+        assert resp.result == {
+            "track_scope": "return",
+            "track_index": 1,
+        }
+
+        invalid_resp = await conn.send_command(
+            CommandRequest(
+                command="track.set_mute",
+                params={"track_scope": "master", "mute": True},
+                id="track-mute-master",
+            )
+        )
+
+        assert invalid_resp.status == "error"
+        assert invalid_resp.error is not None
+        assert invalid_resp.error.code == "INVALID_PARAMS"
 
         await conn.disconnect()
 

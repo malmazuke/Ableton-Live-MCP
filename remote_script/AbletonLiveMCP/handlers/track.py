@@ -12,27 +12,90 @@ from typing import Any
 from ..dispatcher import InvalidParamsError, NotFoundError
 from .base import BaseHandler
 
+TRACK_SCOPES = {"main", "return", "master"}
+
 
 class TrackHandler(BaseHandler):
     """Handle track CRUD and property commands."""
 
-    def _resolve_track(self, params: dict[str, Any]) -> tuple[Any, int, int]:
-        """Return ``(track, track_index_1based, lo_index)`` or raise."""
+    def _track_label(self, track_scope: str, track_index: int | None) -> str:
+        """Return a human-readable label for the resolved track."""
+        if track_scope == "master":
+            return "Master track"
+        if track_scope == "return":
+            return f"Return track {track_index}"
+        return f"Track {track_index}"
+
+    def _require_track_scope(self, params: dict[str, Any]) -> str:
+        """Return a validated track scope, defaulting to main."""
+        raw = params.get("track_scope", "main")
+        if not isinstance(raw, str):
+            raise InvalidParamsError("'track_scope' must be a string")
+        if raw not in TRACK_SCOPES:
+            raise InvalidParamsError(
+                "'track_scope' must be one of: main, return, master"
+            )
+        return raw
+
+    def _require_track_index(
+        self,
+        params: dict[str, Any],
+        track_scope: str,
+    ) -> int | None:
+        """Return a validated 1-based track index for the requested scope."""
         raw = params.get("track_index")
+        if track_scope == "master":
+            if "track_index" in params:
+                raise InvalidParamsError(
+                    "'track_index' must be omitted when track_scope is master"
+                )
+            return None
         if raw is None:
-            raise InvalidParamsError("'track_index' parameter is required")
-        if not isinstance(raw, int):
+            raise InvalidParamsError(
+                f"'track_index' parameter is required when track_scope is {track_scope}"
+            )
+        if isinstance(raw, bool) or not isinstance(raw, int):
             raise InvalidParamsError("'track_index' must be an integer")
         if raw < 1:
             raise InvalidParamsError("'track_index' must be at least 1")
+        return raw
+
+    def _resolve_track(
+        self,
+        params: dict[str, Any],
+    ) -> tuple[Any, str, int | None, int | None]:
+        """Return ``(track, track_scope, track_index_1based, lo_index)`` or raise."""
+        track_scope = self._require_track_scope(params)
+        track_index = self._require_track_index(params, track_scope)
 
         song = self._song
-        tracks = song.tracks
-        n = len(tracks)
-        if raw > n:
-            raise NotFoundError(f"Track {raw} does not exist (song has {n} track(s))")
-        lo = raw - 1
-        return tracks[lo], raw, lo
+        if track_scope == "main":
+            tracks = song.tracks
+            n = len(tracks)
+            if track_index is None:
+                raise InvalidParamsError("'track_index' parameter is required")
+            if track_index > n:
+                raise NotFoundError(
+                    f"Track {track_index} does not exist (song has {n} track(s))"
+                )
+            lo = track_index - 1
+            return tracks[lo], track_scope, track_index, lo
+
+        if track_scope == "return":
+            tracks = song.return_tracks
+            n = len(tracks)
+            if track_index is None:
+                raise InvalidParamsError("'track_index' parameter is required")
+            if track_index > n:
+                raise NotFoundError(
+                    "Return track "
+                    f"{track_index} does not exist "
+                    f"(song has {n} return track(s))"
+                )
+            lo = track_index - 1
+            return tracks[lo], track_scope, track_index, lo
+
+        return song.master_track, track_scope, None, None
 
     def _require_non_empty_string(self, params: dict[str, Any], name: str) -> str:
         """Return a required non-empty string parameter."""
@@ -40,6 +103,53 @@ class TrackHandler(BaseHandler):
         if not isinstance(value, str) or not value.strip():
             raise InvalidParamsError(f"'{name}' must be a non-empty string")
         return value
+
+    def _read_bool_attribute(
+        self,
+        track: Any,
+        attribute_name: str,
+        default: bool = False,
+    ) -> bool:
+        """Read a boolean property from a track, falling back safely."""
+        if not hasattr(track, attribute_name):
+            return default
+
+        try:
+            return bool(getattr(track, attribute_name))
+        except Exception:
+            return default
+
+    def _read_track_value(
+        self,
+        track: Any,
+        attribute_name: str,
+        default: Any = None,
+    ) -> Any:
+        """Read a track attribute defensively."""
+        if not hasattr(track, attribute_name):
+            return default
+
+        try:
+            return getattr(track, attribute_name)
+        except Exception:
+            return default
+
+    def _set_track_value(
+        self,
+        track: Any,
+        attribute_name: str,
+        value: Any,
+        label: str,
+    ) -> None:
+        """Set a track attribute if the runtime supports it."""
+        if not hasattr(track, attribute_name):
+            raise InvalidParamsError(f"{label} does not support {attribute_name}")
+        try:
+            setattr(track, attribute_name, value)
+        except Exception as exc:
+            raise InvalidParamsError(
+                f"{label} does not support {attribute_name}"
+            ) from exc
 
     def _routing_label(self, attribute_name: str) -> str:
         """Return a human-readable label for a routing attribute."""
@@ -151,19 +261,31 @@ class TrackHandler(BaseHandler):
         """Return a structured snapshot of one track (read-only)."""
 
         def _read() -> dict[str, Any]:
-            track, track_index, _lo = self._resolve_track(params)
+            track, track_scope, track_index, _lo = self._resolve_track(params)
 
-            device_names = [d.name for d in track.devices]
-            clip_slot_has_clip = [bool(slot.has_clip) for slot in track.clip_slots]
+            devices = self._read_track_value(track, "devices", []) or []
+            device_names = [str(getattr(device, "name", "")) for device in devices]
+
+            clip_slots = self._read_track_value(track, "clip_slots", []) or []
+            clip_slot_has_clip = [
+                bool(getattr(slot, "has_clip", False)) for slot in clip_slots
+            ]
 
             return {
-                "name": track.name,
+                "name": str(getattr(track, "name", "")),
+                "track_scope": track_scope,
                 "track_index": track_index,
-                "is_audio_track": bool(track.has_audio_input),
-                "is_midi_track": bool(track.has_midi_input),
-                "mute": bool(track.mute),
-                "solo": bool(track.solo),
-                "arm": bool(track.arm),
+                "is_audio_track": self._read_bool_attribute(
+                    track,
+                    "has_audio_input",
+                ),
+                "is_midi_track": self._read_bool_attribute(
+                    track,
+                    "has_midi_input",
+                ),
+                "mute": self._read_bool_attribute(track, "mute"),
+                "solo": self._read_bool_attribute(track, "solo"),
+                "arm": self._read_bool_attribute(track, "arm"),
                 "volume": float(track.mixer_device.volume.value),
                 "pan": float(track.mixer_device.panning.value),
                 "device_names": device_names,
@@ -176,7 +298,7 @@ class TrackHandler(BaseHandler):
         """Return the current routing selections for one track."""
 
         def _read() -> dict[str, Any]:
-            track, track_index, _lo = self._resolve_track(params)
+            track, _track_scope, track_index, _lo = self._resolve_track(params)
             return {
                 "track_index": track_index,
                 "input_routing_type": self._read_routing_selection(
@@ -207,7 +329,7 @@ class TrackHandler(BaseHandler):
         """Return all available routing choices for one track."""
 
         def _read() -> dict[str, Any]:
-            track, track_index, _lo = self._resolve_track(params)
+            track, _track_scope, track_index, _lo = self._resolve_track(params)
             return {
                 "track_index": track_index,
                 "available_input_routing_types": [
@@ -271,7 +393,7 @@ class TrackHandler(BaseHandler):
         channel_collection_name = f"available_{direction}_routing_channels"
 
         def _set() -> dict[str, Any]:
-            track, track_index, _lo = self._resolve_track(params)
+            track, _track_scope, track_index, _lo = self._resolve_track(params)
 
             type_options = self._get_routing_collection(
                 track,
@@ -368,7 +490,7 @@ class TrackHandler(BaseHandler):
         """Delete a track by 1-based index."""
 
         def _do_delete() -> dict[str, Any]:
-            _track, track_index, lo = self._resolve_track(params)
+            _track, _track_scope, track_index, lo = self._resolve_track(params)
             self._song.delete_track(lo)
             return {"track_index": track_index}
 
@@ -378,7 +500,7 @@ class TrackHandler(BaseHandler):
         """Duplicate a track; copy is inserted immediately after the source."""
 
         def _do_duplicate() -> dict[str, Any]:
-            _track, track_index, lo = self._resolve_track(params)
+            _track, _track_scope, track_index, lo = self._resolve_track(params)
             self._song.duplicate_track(lo)
             new_lo = lo + 1
             return {
@@ -395,9 +517,13 @@ class TrackHandler(BaseHandler):
             raise InvalidParamsError("'name' must be a non-empty string")
 
         def _set() -> dict[str, Any]:
-            _track, track_index, lo = self._resolve_track(params)
-            self._song.tracks[lo].name = name
-            return {"track_index": track_index}
+            track, track_scope, track_index, _lo = self._resolve_track(params)
+            label = self._track_label(track_scope, track_index)
+            self._set_track_value(track, "name", name, label)
+            return {
+                "track_scope": track_scope,
+                "track_index": track_index,
+            }
 
         return self._run_on_main_thread(_set)
 
@@ -408,9 +534,13 @@ class TrackHandler(BaseHandler):
             raise InvalidParamsError("'mute' must be a boolean")
 
         def _set() -> dict[str, Any]:
-            _track, track_index, lo = self._resolve_track(params)
-            self._song.tracks[lo].mute = mute
-            return {"track_index": track_index}
+            track, track_scope, track_index, _lo = self._resolve_track(params)
+            label = self._track_label(track_scope, track_index)
+            self._set_track_value(track, "mute", mute, label)
+            return {
+                "track_scope": track_scope,
+                "track_index": track_index,
+            }
 
         return self._run_on_main_thread(_set)
 
@@ -421,9 +551,13 @@ class TrackHandler(BaseHandler):
             raise InvalidParamsError("'solo' must be a boolean")
 
         def _set() -> dict[str, Any]:
-            _track, track_index, lo = self._resolve_track(params)
-            self._song.tracks[lo].solo = solo
-            return {"track_index": track_index}
+            track, track_scope, track_index, _lo = self._resolve_track(params)
+            label = self._track_label(track_scope, track_index)
+            self._set_track_value(track, "solo", solo, label)
+            return {
+                "track_scope": track_scope,
+                "track_index": track_index,
+            }
 
         return self._run_on_main_thread(_set)
 
@@ -434,13 +568,15 @@ class TrackHandler(BaseHandler):
             raise InvalidParamsError("'arm' must be a boolean")
 
         def _set() -> dict[str, Any]:
-            track, track_index, lo = self._resolve_track(params)
-            if not bool(track.can_be_armed):
-                raise InvalidParamsError(
-                    f"Track {track_index} cannot be armed (e.g. return/master)"
-                )
-            self._song.tracks[lo].arm = arm
-            return {"track_index": track_index}
+            track, track_scope, track_index, _lo = self._resolve_track(params)
+            label = self._track_label(track_scope, track_index)
+            if not self._read_bool_attribute(track, "can_be_armed"):
+                raise InvalidParamsError(f"{label} cannot be armed")
+            self._set_track_value(track, "arm", arm, label)
+            return {
+                "track_scope": track_scope,
+                "track_index": track_index,
+            }
 
         return self._run_on_main_thread(_set)
 

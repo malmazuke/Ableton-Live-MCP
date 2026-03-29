@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from mcp.server.fastmcp import Context  # noqa: TCH002
 from pydantic import BaseModel, Field
@@ -13,12 +13,15 @@ from mcp_ableton.protocol import CommandRequest
 if TYPE_CHECKING:
     from mcp_ableton.connection import AbletonConnection
 
+TrackScope = Literal["main", "return", "master"]
+
 
 class TrackInfo(BaseModel):
     """Per-track snapshot returned by ``get_track_info``."""
 
     name: str
-    track_index: int
+    track_scope: TrackScope
+    track_index: int | None
     is_audio_track: bool
     is_midi_track: bool
     mute: bool
@@ -53,7 +56,46 @@ class TrackDuplicatedResult(BaseModel):
 class TrackUpdatedResult(BaseModel):
     """Result of ``set_track_name``, ``set_track_mute``, etc."""
 
-    track_index: int
+    track_scope: TrackScope
+    track_index: int | None
+
+
+def _validate_track_scope_and_index(
+    track_scope: TrackScope,
+    track_index: int | None,
+) -> dict[str, object]:
+    """Validate the scoped track address before sending a TCP command."""
+    if track_scope in {"main", "return"}:
+        if track_index is None:
+            raise ValueError(
+                f"'track_index' is required when track_scope='{track_scope}'"
+            )
+        if isinstance(track_index, bool) or not isinstance(track_index, int):
+            raise ValueError("'track_index' must be an integer")
+        if track_index < 1:
+            raise ValueError("'track_index' must be at least 1")
+        return {"track_scope": track_scope, "track_index": track_index}
+
+    if track_index is not None:
+        raise ValueError("'track_index' must be omitted when track_scope='master'")
+
+    return {"track_scope": track_scope}
+
+
+def _build_track_params(
+    *,
+    track_scope: TrackScope,
+    track_index: int | None,
+    extra_params: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Build a validated command payload for a scoped track request."""
+    params: dict[str, object] = _validate_track_scope_and_index(
+        track_scope,
+        track_index,
+    )
+    if extra_params:
+        params.update(extra_params)
+    return params
 
 
 class RoutingOption(BaseModel):
@@ -107,13 +149,21 @@ def _get_connection(ctx: Context) -> AbletonConnection:
 @mcp.tool()
 async def get_track_info(
     ctx: Context,
-    track_index: Annotated[
-        int,
+    track_scope: Annotated[
+        TrackScope,
         Field(
-            description="1-based index into the song's track list (first track is 1).",
+            description="Track scope: main, return, or master.",
+        ),
+    ] = "main",
+    track_index: Annotated[
+        int | None,
+        Field(
+            description=(
+                "1-based track index for main/return tracks. Omit for master."
+            ),
             ge=1,
         ),
-    ],
+    ] = None,
 ) -> TrackInfo:
     """Get information about a track (name, type, mixer, devices, clip slots).
 
@@ -121,10 +171,11 @@ async def get_track_info(
     data, use the dedicated device and clip tools (composition over this view).
     """
     connection = _get_connection(ctx)
-    request = CommandRequest(
-        command="track.get_info",
-        params={"track_index": track_index},
+    params = _build_track_params(
+        track_scope=track_scope,
+        track_index=track_index,
     )
+    request = CommandRequest(command="track.get_info", params=params)
     response = await connection.send_command(request)
     response.raise_on_error()
     return TrackInfo.model_validate(response.result)
@@ -368,20 +419,28 @@ async def duplicate_track(
 @mcp.tool()
 async def set_track_name(
     ctx: Context,
-    track_index: Annotated[
-        int,
-        Field(description="1-based track index.", ge=1),
-    ],
     name: Annotated[
         str,
         Field(description="New track name.", min_length=1),
     ],
+    track_scope: Annotated[
+        TrackScope,
+        Field(description="Track scope: main, return, or master."),
+    ] = "main",
+    track_index: Annotated[
+        int | None,
+        Field(description="1-based track index for main/return tracks.", ge=1),
+    ] = None,
 ) -> TrackUpdatedResult:
     """Rename a track."""
     connection = _get_connection(ctx)
     request = CommandRequest(
         command="track.set_name",
-        params={"track_index": track_index, "name": name},
+        params=_build_track_params(
+            track_scope=track_scope,
+            track_index=track_index,
+            extra_params={"name": name},
+        ),
     )
     response = await connection.send_command(request)
     response.raise_on_error()
@@ -391,17 +450,25 @@ async def set_track_name(
 @mcp.tool()
 async def set_track_mute(
     ctx: Context,
-    track_index: Annotated[
-        int,
-        Field(description="1-based track index.", ge=1),
-    ],
     mute: Annotated[bool, Field(description="Whether the track is muted.")],
+    track_scope: Annotated[
+        TrackScope,
+        Field(description="Track scope: main, return, or master."),
+    ] = "main",
+    track_index: Annotated[
+        int | None,
+        Field(description="1-based track index for main/return tracks.", ge=1),
+    ] = None,
 ) -> TrackUpdatedResult:
     """Set a track's mute state."""
     connection = _get_connection(ctx)
     request = CommandRequest(
         command="track.set_mute",
-        params={"track_index": track_index, "mute": mute},
+        params=_build_track_params(
+            track_scope=track_scope,
+            track_index=track_index,
+            extra_params={"mute": mute},
+        ),
     )
     response = await connection.send_command(request)
     response.raise_on_error()
@@ -411,17 +478,25 @@ async def set_track_mute(
 @mcp.tool()
 async def set_track_solo(
     ctx: Context,
-    track_index: Annotated[
-        int,
-        Field(description="1-based track index.", ge=1),
-    ],
     solo: Annotated[bool, Field(description="Whether the track is soloed.")],
+    track_scope: Annotated[
+        TrackScope,
+        Field(description="Track scope: main, return, or master."),
+    ] = "main",
+    track_index: Annotated[
+        int | None,
+        Field(description="1-based track index for main/return tracks.", ge=1),
+    ] = None,
 ) -> TrackUpdatedResult:
     """Set a track's solo state."""
     connection = _get_connection(ctx)
     request = CommandRequest(
         command="track.set_solo",
-        params={"track_index": track_index, "solo": solo},
+        params=_build_track_params(
+            track_scope=track_scope,
+            track_index=track_index,
+            extra_params={"solo": solo},
+        ),
     )
     response = await connection.send_command(request)
     response.raise_on_error()
@@ -431,20 +506,28 @@ async def set_track_solo(
 @mcp.tool()
 async def set_track_arm(
     ctx: Context,
-    track_index: Annotated[
-        int,
-        Field(description="1-based track index.", ge=1),
-    ],
     arm: Annotated[
         bool,
         Field(description="Whether the track is armed for recording."),
     ],
+    track_scope: Annotated[
+        TrackScope,
+        Field(description="Track scope: main, return, or master."),
+    ] = "main",
+    track_index: Annotated[
+        int | None,
+        Field(description="1-based track index for main/return tracks.", ge=1),
+    ] = None,
 ) -> TrackUpdatedResult:
     """Arm or disarm a track for recording (only if the track can be armed)."""
     connection = _get_connection(ctx)
     request = CommandRequest(
         command="track.set_arm",
-        params={"track_index": track_index, "arm": arm},
+        params=_build_track_params(
+            track_scope=track_scope,
+            track_index=track_index,
+            extra_params={"arm": arm},
+        ),
     )
     response = await connection.send_command(request)
     response.raise_on_error()
@@ -462,6 +545,7 @@ __all__ = [
     "TrackOutputRoutingResult",
     "TrackRoutingInfo",
     "TrackUpdatedResult",
+    "TrackScope",
     "create_audio_track",
     "create_midi_track",
     "delete_track",
