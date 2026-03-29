@@ -5,7 +5,7 @@ and playback position.
 """
 
 import time
-from typing import Any
+from typing import Any, Literal
 
 from ..dispatcher import InvalidParamsError
 from .base import BaseHandler
@@ -83,6 +83,25 @@ class SessionHandler(BaseHandler):
             "Timed out waiting for overdub state update: "
             f"expected={expected_overdub}, actual={last_state}"
         )
+
+    def _apply_undo_redo(self, action: Literal["undo", "redo"]) -> dict[str, Any]:
+        """Run undo or redo on the Song and return post-action availability."""
+        availability_attr = f"can_{action}"
+        unavailable_message = f"No {action} history available"
+
+        def _apply() -> dict[str, Any]:
+            song = self._song
+            if not getattr(song, availability_attr):
+                raise InvalidParamsError(unavailable_message)
+
+            getattr(song, action)()
+            return {
+                "action": action,
+                "can_undo": song.can_undo,
+                "can_redo": song.can_redo,
+            }
+
+        return self._run_on_main_thread(_apply)
 
     def handle_get_info(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return current session state."""
@@ -195,6 +214,14 @@ class SessionHandler(BaseHandler):
             action="stop_recording",
             expected_recording=False,
         )
+
+    def handle_undo(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Undo the last song-level operation."""
+        return self._apply_undo_redo("undo")
+
+    def handle_redo(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Redo the last undone song-level operation."""
+        return self._apply_undo_redo("redo")
 
     def handle_set_overdub(self, params: dict[str, Any]) -> dict[str, Any]:
         """Set MIDI arrangement overdub state."""

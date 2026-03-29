@@ -24,9 +24,13 @@ class _FakeSong:
         is_playing: bool = False,
         record_mode: bool = False,
         overdub: bool = False,
+        can_undo: bool = False,
+        can_redo: bool = False,
         can_capture_midi: bool = True,
         song_length: float = 64.0,
         current_song_time: float = 0.0,
+        undo_result: tuple[bool, bool] = (False, True),
+        redo_result: tuple[bool, bool] = (True, False),
     ):
         self.tempo = tempo
         self.signature_numerator = signature_numerator
@@ -34,14 +38,20 @@ class _FakeSong:
         self.is_playing = is_playing
         self.record_mode = record_mode
         self.overdub = overdub
+        self.can_undo = can_undo
+        self.can_redo = can_redo
         self.can_capture_midi = can_capture_midi
         self.song_length = song_length
         self.current_song_time = current_song_time
+        self.undo_result = undo_result
+        self.redo_result = redo_result
         self.tracks = [MagicMock() for _ in range(3)]
         self.captured_midi_destinations: list[int] = []
 
         self.start_playing = MagicMock(side_effect=self._start_playing)
         self.stop_playing = MagicMock(side_effect=self._stop_playing)
+        self.undo = MagicMock(side_effect=self._undo)
+        self.redo = MagicMock(side_effect=self._redo)
         self.capture_midi = MagicMock(side_effect=self._capture_midi)
 
     def _start_playing(self) -> None:
@@ -52,6 +62,12 @@ class _FakeSong:
 
     def _capture_midi(self, destination: int) -> None:
         self.captured_midi_destinations.append(destination)
+
+    def _undo(self) -> None:
+        self.can_undo, self.can_redo = self.undo_result
+
+    def _redo(self) -> None:
+        self.can_undo, self.can_redo = self.redo_result
 
 
 class _FakeControlSurface:
@@ -280,6 +296,72 @@ class TestStopRecording:
         song.stop_playing.assert_not_called()
 
 
+class TestUndoRedo:
+    def test_undo_succeeds_when_history_is_available(self) -> None:
+        song = _FakeSong(can_undo=True, can_redo=False, undo_result=(False, True))
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        result = handler.handle_undo({})
+
+        assert result == {
+            "action": "undo",
+            "can_undo": False,
+            "can_redo": True,
+        }
+        song.undo.assert_called_once_with()
+        song.redo.assert_not_called()
+
+    def test_redo_succeeds_when_history_is_available(self) -> None:
+        song = _FakeSong(can_undo=False, can_redo=True, redo_result=(True, False))
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        result = handler.handle_redo({})
+
+        assert result == {
+            "action": "redo",
+            "can_undo": True,
+            "can_redo": False,
+        }
+        song.redo.assert_called_once_with()
+        song.undo.assert_not_called()
+
+    def test_undo_rejects_when_no_history_is_available(self) -> None:
+        song = _FakeSong(can_undo=False, can_redo=False)
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        with pytest.raises(InvalidParamsError, match="No undo history available"):
+            handler.handle_undo({})
+
+        song.undo.assert_not_called()
+
+    def test_redo_rejects_when_no_history_is_available(self) -> None:
+        song = _FakeSong(can_undo=True, can_redo=False)
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        with pytest.raises(InvalidParamsError, match="No redo history available"):
+            handler.handle_redo({})
+
+        song.redo.assert_not_called()
+
+    def test_undo_returns_post_action_flags(self) -> None:
+        song = _FakeSong(can_undo=True, can_redo=False, undo_result=(True, True))
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        result = handler.handle_undo({})
+
+        assert result["can_undo"] is True
+        assert result["can_redo"] is True
+
+    def test_redo_returns_post_action_flags(self) -> None:
+        song = _FakeSong(can_undo=False, can_redo=True, redo_result=(False, False))
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        result = handler.handle_redo({})
+
+        assert result["can_undo"] is False
+        assert result["can_redo"] is False
+
+
 class TestSetOverdub:
     def test_sets_overdub(self, handler: SessionHandler, song: _FakeSong) -> None:
         result = handler.handle_set_overdub({"overdub": True})
@@ -429,6 +511,21 @@ class TestInvalidParamsErrorRouting:
         assert resp["status"] == "error"
         assert resp["error"]["code"] == "INVALID_PARAMS"
         assert "No MIDI available to capture" in resp["error"]["message"]
+
+    def test_dispatcher_routes_undo_success(self) -> None:
+        song = _FakeSong(can_undo=True, can_redo=False, undo_result=(False, True))
+        cs = _FakeControlSurface(song)
+        dispatcher = Dispatcher(cs)
+        dispatcher.register("session", SessionHandler(cs))
+
+        resp = dispatcher.dispatch("session.undo", {}, "undo-1")
+
+        assert resp["status"] == "ok"
+        assert resp["result"] == {
+            "action": "undo",
+            "can_undo": False,
+            "can_redo": True,
+        }
 
     def test_dispatcher_routes_internal_error(self, song: _FakeSong) -> None:
         cs = _FakeControlSurface(song)

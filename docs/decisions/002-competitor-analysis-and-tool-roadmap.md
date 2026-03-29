@@ -502,6 +502,8 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `stop_playback` | `session.stop_playback` |
 | `start_recording` | `session.start_recording` |
 | `stop_recording` | `session.stop_recording` |
+| `undo` | `session.undo` |
+| `redo` | `session.redo` |
 | `capture_midi` | `session.capture_midi` |
 | `set_overdub` | `session.set_overdub` |
 | `get_playback_position` | `session.get_playback_position` |
