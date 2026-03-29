@@ -4,6 +4,7 @@ Handler modules (session, track, clip, etc.) will be added by subsequent
 issues as the tool surface grows.
 """
 
+from .arrangement import ArrangementHandler
 from .browser import BrowserHandler
 from .clip import ClipHandler
 from .device import DeviceHandler
@@ -12,6 +13,7 @@ from .session import SessionHandler
 from .track import TrackHandler
 
 __all__ = [
+    "ArrangementHandler",
     "BrowserHandler",
     "ClipHandler",
     "DeviceHandler",

@@ -494,6 +494,11 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `create_clip` | `clip.create` |
 | `add_notes_to_clip` | `clip.add_notes` |
 | `get_clip_notes` | `clip.get_notes` |
+| `get_arrangement_clips` | `arrangement.get_clips` |
+| `create_arrangement_clip` | `arrangement.create_clip` |
+| `move_arrangement_clip` | `arrangement.move_clip` |
+| `get_arrangement_length` | `arrangement.get_length` |
+| `set_arrangement_loop` | `arrangement.set_loop` |
 | `get_device_parameters` | `device.get_parameters` |
 | `set_device_parameter` | `device.set_parameter` |
 | `load_instrument` | `browser.load_instrument` |

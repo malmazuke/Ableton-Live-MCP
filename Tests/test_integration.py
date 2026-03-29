@@ -94,6 +94,25 @@ class _MixerHandler:
         }
 
 
+class _ArrangementHandler:
+    def handle_get_clips(self, params):
+        return {
+            "track_index": None,
+            "clips": [
+                {
+                    "track_index": 1,
+                    "clip_index": 1,
+                    "name": "Verse",
+                    "start_time": 0.0,
+                    "end_time": 8.0,
+                    "length": 8.0,
+                    "is_audio_clip": False,
+                    "is_midi_clip": True,
+                }
+            ],
+        }
+
+
 @pytest.fixture
 def tcp_server():
     """Start a real TcpServer in a background thread on an OS-assigned port."""
@@ -103,6 +122,7 @@ def tcp_server():
     dispatcher.register("browser", _BrowserHandler())
     dispatcher.register("device", _DeviceHandler())
     dispatcher.register("mixer", _MixerHandler())
+    dispatcher.register("arrangement", _ArrangementHandler())
 
     logs: list[str] = []
     server = TcpServer(
@@ -223,5 +243,22 @@ class TestFullRoundTrip:
             "volume": 0.88,
             "pan": 0.0,
         }
+
+        await conn.disconnect()
+
+    async def test_arrangement_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(command="arrangement.get_clips", id="arrangement-1")
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "arrangement-1"
+        assert resp.result is not None
+        assert resp.result["track_index"] is None
+        assert resp.result["clips"][0]["name"] == "Verse"
+        assert resp.result["clips"][0]["is_midi_clip"] is True
 
         await conn.disconnect()
