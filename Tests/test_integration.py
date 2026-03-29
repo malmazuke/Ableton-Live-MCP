@@ -301,6 +301,34 @@ class _ClipHandler:
         }
 
 
+class _GrooveHandler:
+    def handle_get_pool(self, params):
+        return {
+            "grooves": [
+                {
+                    "groove_index": 1,
+                    "name": "MPC 16 Swing 57",
+                    "base": 2,
+                    "quantization_amount": 0.0,
+                    "timing_amount": 0.57,
+                    "random_amount": 0.0,
+                    "velocity_amount": 0.5,
+                }
+            ]
+        }
+
+    def handle_apply(self, params):
+        groove_index = params["groove_index"]
+        if groove_index != 1:
+            raise RuntimeError(f"Groove {groove_index} does not exist")
+        return {
+            "track_index": params["track_index"],
+            "clip_slot_index": params["clip_slot_index"],
+            "groove_index": groove_index,
+            "groove_name": "MPC 16 Swing 57",
+        }
+
+
 class _TrackHandler:
     def handle_get_routing(self, params):
         return {
@@ -336,6 +364,7 @@ def tcp_server():
     dispatcher.register("arrangement", _ArrangementHandler())
     dispatcher.register("scene", _SceneHandler())
     dispatcher.register("clip", _ClipHandler())
+    dispatcher.register("groove", _GrooveHandler())
     dispatcher.register("track", _TrackHandler())
 
     logs: list[str] = []
@@ -830,5 +859,40 @@ class TestFullRoundTrip:
         assert resp.result["device_name"] == "Auto Filter"
         assert resp.result["parameter_name"] == "Frequency"
         assert resp.result["points"][1]["step_length"] == 0.5
+
+        await conn.disconnect()
+
+    async def test_groove_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        pool_resp = await conn.send_command(
+            CommandRequest(command="groove.get_pool", id="groove-1")
+        )
+        assert pool_resp.status == "ok"
+        assert pool_resp.id == "groove-1"
+        assert pool_resp.result is not None
+        assert pool_resp.result["grooves"][0]["groove_index"] == 1
+
+        apply_resp = await conn.send_command(
+            CommandRequest(
+                command="groove.apply",
+                params={
+                    "track_index": 2,
+                    "clip_slot_index": 1,
+                    "groove_index": 1,
+                },
+                id="groove-2",
+            )
+        )
+        assert apply_resp.status == "ok"
+        assert apply_resp.id == "groove-2"
+        assert apply_resp.result == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "groove_index": 1,
+            "groove_name": "MPC 16 Swing 57",
+        }
 
         await conn.disconnect()

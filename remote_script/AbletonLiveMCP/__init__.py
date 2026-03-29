@@ -54,6 +54,7 @@ class AbletonLiveMCP(ControlSurface):
         from .handlers.browser import BrowserHandler
         from .handlers.clip import ClipHandler
         from .handlers.device import DeviceHandler
+        from .handlers.groove import GrooveHandler
         from .handlers.mixer import MixerHandler
         from .handlers.scene import SceneHandler
         from .handlers.session import SessionHandler
@@ -65,6 +66,7 @@ class AbletonLiveMCP(ControlSurface):
         self._dispatcher.register("clip", ClipHandler(self))
         self._dispatcher.register("arrangement", ArrangementHandler(self))
         self._dispatcher.register("browser", BrowserHandler(self))
+        self._dispatcher.register("groove", GrooveHandler(self))
         self._dispatcher.register("mixer", MixerHandler(self))
         self._dispatcher.register("scene", SceneHandler(self))
 

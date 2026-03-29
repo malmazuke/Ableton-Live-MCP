@@ -8,6 +8,7 @@ from .arrangement import ArrangementHandler
 from .browser import BrowserHandler
 from .clip import ClipHandler
 from .device import DeviceHandler
+from .groove import GrooveHandler
 from .mixer import MixerHandler
 from .note_mixin import NoteMixin
 from .scene import SceneHandler
@@ -19,6 +20,7 @@ __all__ = [
     "BrowserHandler",
     "ClipHandler",
     "DeviceHandler",
+    "GrooveHandler",
     "MixerHandler",
     "NoteMixin",
     "SceneHandler",
