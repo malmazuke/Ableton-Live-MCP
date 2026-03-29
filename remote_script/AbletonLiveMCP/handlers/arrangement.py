@@ -7,9 +7,10 @@ from typing import Any
 
 from ..dispatcher import InvalidParamsError, NotFoundError
 from .base import BaseHandler
+from .note_mixin import NoteMixin
 
 
-class ArrangementHandler(BaseHandler):
+class ArrangementHandler(NoteMixin, BaseHandler):
     """Handle arrangement clip and loop commands."""
 
     def _resolve_track(self, track_index: int) -> tuple[Any, int, int]:
@@ -51,7 +52,7 @@ class ArrangementHandler(BaseHandler):
             raise InvalidParamsError("'clip_index' must be at least 1")
         return raw
 
-    def _require_number(
+    def _require_arrangement_number(
         self,
         params: dict[str, Any],
         key: str,
@@ -59,6 +60,7 @@ class ArrangementHandler(BaseHandler):
         minimum: float | None = None,
         exclusive_minimum: bool = False,
     ) -> float:
+        """Validate a required number param for arrangement commands."""
         raw = params.get(key)
         if raw is None:
             raise InvalidParamsError(f"'{key}' parameter is required")
@@ -136,6 +138,35 @@ class ArrangementHandler(BaseHandler):
             )
         return clips[clip_index - 1]
 
+    def _resolve_midi_arrangement_clip(
+        self,
+        params: dict[str, Any],
+    ) -> tuple[Any, int, int]:
+        """Return ``(clip, track_index, clip_index)`` for a MIDI arrangement clip."""
+        track_index = self._require_track_index(params, "track_index")
+        assert track_index is not None
+        clip_index = self._require_clip_index(params)
+        track, resolved_track_index, _ = self._resolve_track(track_index)
+
+        if not bool(track.has_midi_input):
+            raise InvalidParamsError(
+                f"Track {resolved_track_index} does not accept MIDI clips"
+            )
+
+        clip = self._resolve_arrangement_clip(
+            track,
+            track_index=resolved_track_index,
+            clip_index=clip_index,
+        )
+
+        if not bool(clip.is_midi_clip):
+            raise InvalidParamsError(
+                f"Arrangement clip {clip_index} on track {resolved_track_index} "
+                "is not a MIDI clip"
+            )
+
+        return clip, resolved_track_index, clip_index
+
     def _find_new_clip(
         self,
         before: list[Any],
@@ -210,6 +241,10 @@ class ArrangementHandler(BaseHandler):
                 f"Track {target_track_index} does not accept audio arrangement clips"
             )
 
+    # ------------------------------------------------------------------
+    # Existing arrangement handlers
+    # ------------------------------------------------------------------
+
     def handle_get_clips(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return arrangement clips for one track or all tracks."""
         track_index = self._require_track_index(params, "track_index", required=False)
@@ -233,8 +268,8 @@ class ArrangementHandler(BaseHandler):
         """Create an empty MIDI arrangement clip on a MIDI track."""
         track_index = self._require_track_index(params, "track_index")
         assert track_index is not None
-        start_time = self._require_number(params, "start_time", minimum=0.0)
-        length = self._require_number(
+        start_time = self._require_arrangement_number(params, "start_time", minimum=0.0)
+        length = self._require_arrangement_number(
             params,
             "length",
             minimum=0.0,
@@ -271,7 +306,7 @@ class ArrangementHandler(BaseHandler):
         assert track_index is not None
         file_path = self._require_absolute_file_path(params, "file_path")
         self._require_existing_file(file_path)
-        start_time = self._require_number(params, "start_time", minimum=0.0)
+        start_time = self._require_arrangement_number(params, "start_time", minimum=0.0)
 
         def _import() -> dict[str, Any]:
             track, resolved_track_index, _ = self._resolve_track(track_index)
@@ -311,7 +346,9 @@ class ArrangementHandler(BaseHandler):
         source_track_index = self._require_track_index(params, "track_index")
         assert source_track_index is not None
         source_clip_index = self._require_clip_index(params)
-        new_start_time = self._require_number(params, "new_start_time", minimum=0.0)
+        new_start_time = self._require_arrangement_number(
+            params, "new_start_time", minimum=0.0
+        )
         target_track_index = self._require_track_index(
             params,
             "new_track_index",
@@ -386,8 +423,8 @@ class ArrangementHandler(BaseHandler):
 
     def handle_set_loop(self, params: dict[str, Any]) -> dict[str, Any]:
         """Set arrangement loop start/end/enabled."""
-        start_time = self._require_number(params, "start_time", minimum=0.0)
-        end_time = self._require_number(params, "end_time", minimum=0.0)
+        start_time = self._require_arrangement_number(params, "start_time", minimum=0.0)
+        end_time = self._require_arrangement_number(params, "end_time", minimum=0.0)
         enabled = params.get("enabled", True)
         if not isinstance(enabled, bool):
             raise InvalidParamsError("'enabled' must be a boolean")
@@ -406,6 +443,111 @@ class ArrangementHandler(BaseHandler):
             }
 
         return self._run_on_main_thread(_set)
+
+    # ------------------------------------------------------------------
+    # Note editing handlers for arrangement clips
+    # ------------------------------------------------------------------
+
+    def handle_get_notes(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return all MIDI notes in an arrangement clip."""
+
+        def _do() -> dict[str, Any]:
+            clip, track_index, clip_index = self._resolve_midi_arrangement_clip(params)
+            notes = [self._serialize_note(note) for note in self._get_clip_notes(clip)]
+            return {
+                "track_index": track_index,
+                "clip_index": clip_index,
+                "notes": notes,
+                "count": len(notes),
+            }
+
+        return self._run_on_main_thread(_do)
+
+    def handle_add_notes(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Add MIDI notes to an arrangement clip."""
+        normalized_notes = self._normalize_input_notes(params)
+
+        def _do() -> dict[str, Any]:
+            clip, track_index, clip_index = self._resolve_midi_arrangement_clip(params)
+            before_notes = [
+                self._serialize_note(note) for note in self._get_clip_notes(clip)
+            ]
+            note_ids = self._write_notes(
+                clip,
+                normalized_notes,
+                log_prefix="AbletonLiveMCP arrangement.add_notes",
+                before_notes=before_notes,
+            )
+            return {
+                "track_index": track_index,
+                "clip_index": clip_index,
+                "added_count": len(note_ids),
+                "note_ids": note_ids,
+            }
+
+        return self._run_on_main_thread(_do)
+
+    def handle_set_notes(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Replace all MIDI notes in an arrangement clip."""
+        normalized_notes = self._normalize_input_notes(params)
+
+        def _do() -> dict[str, Any]:
+            clip, track_index, clip_index = self._resolve_midi_arrangement_clip(params)
+            existing_notes = [
+                self._serialize_note(note) for note in self._get_clip_notes(clip)
+            ]
+            existing_note_ids = self._extract_note_ids(existing_notes)
+            if existing_note_ids:
+                clip.remove_notes_by_id(existing_note_ids)
+
+            added_note_ids: list[int] = []
+            if normalized_notes:
+                added_note_ids = self._write_notes(
+                    clip,
+                    normalized_notes,
+                    log_prefix="AbletonLiveMCP arrangement.set_notes",
+                )
+
+            return {
+                "track_index": track_index,
+                "clip_index": clip_index,
+                "removed_count": len(existing_note_ids),
+                "added_count": len(added_note_ids),
+                "note_ids": added_note_ids,
+            }
+
+        return self._run_on_main_thread(_do)
+
+    def handle_remove_notes(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Remove notes by pitch/time region from an arrangement clip."""
+        from_pitch, pitch_span, from_time, time_span = self._get_remove_region(params)
+
+        def _do() -> dict[str, Any]:
+            clip, track_index, clip_index = self._resolve_midi_arrangement_clip(params)
+            existing_notes = [
+                self._serialize_note(note) for note in self._get_clip_notes(clip)
+            ]
+            notes_to_remove = [
+                note
+                for note in existing_notes
+                if self._note_matches_region(
+                    note,
+                    from_pitch=from_pitch,
+                    pitch_span=pitch_span,
+                    from_time=from_time,
+                    time_span=time_span,
+                )
+            ]
+            note_ids = self._extract_note_ids(notes_to_remove)
+            if note_ids:
+                clip.remove_notes_by_id(note_ids)
+            return {
+                "track_index": track_index,
+                "clip_index": clip_index,
+                "removed_count": len(note_ids),
+            }
+
+        return self._run_on_main_thread(_do)
 
 
 __all__ = ["ArrangementHandler"]
