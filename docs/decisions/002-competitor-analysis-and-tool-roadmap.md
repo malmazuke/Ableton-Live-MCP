@@ -552,6 +552,11 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `move_arrangement_clip` | `arrangement.move_clip` |
 | `get_arrangement_length` | `arrangement.get_length` |
 | `set_arrangement_loop` | `arrangement.set_loop` |
+| `get_locators` | `arrangement.get_locators` |
+| `create_locator` | `arrangement.create_locator` |
+| `delete_locator` | `arrangement.delete_locator` |
+| `set_locator_name` | `arrangement.set_locator_name` |
+| `jump_to_time` | `arrangement.jump_to_time` |
 | `get_device_parameters` | `device.get_parameters` |
 | `set_device_parameter` | `device.set_parameter` |
 | `load_instrument` | `browser.load_instrument` |

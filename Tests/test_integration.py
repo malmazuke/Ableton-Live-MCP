@@ -163,6 +163,38 @@ class _ArrangementHandler:
             "is_audio_clip": True,
         }
 
+    def handle_get_locators(self, params):
+        return {
+            "locators": [
+                {"locator_index": 1, "name": "Intro", "time": 0.0},
+                {"locator_index": 2, "name": "Breakdown", "time": 16.0},
+            ]
+        }
+
+    def handle_create_locator(self, params):
+        return {
+            "locator_index": 3,
+            "name": params.get("name", "MCP Locator"),
+            "time": params["time"],
+        }
+
+    def handle_delete_locator(self, params):
+        return {
+            "locator_index": params["locator_index"],
+            "name": "Breakdown",
+            "time": 16.0,
+        }
+
+    def handle_set_locator_name(self, params):
+        return {
+            "locator_index": params["locator_index"],
+            "name": params["name"],
+            "time": 0.0,
+        }
+
+    def handle_jump_to_time(self, params):
+        return {"time": params["time"]}
+
 
 class _SceneHandler:
     def handle_get_all(self, params):
@@ -618,6 +650,22 @@ class TestFullRoundTrip:
             "length": 8.5,
             "is_audio_clip": True,
         }
+
+        await conn.disconnect()
+
+    async def test_locator_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(command="arrangement.get_locators", id="locator-1")
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "locator-1"
+        assert resp.result is not None
+        assert resp.result["locators"][0]["name"] == "Intro"
+        assert resp.result["locators"][1]["time"] == 16.0
 
         await conn.disconnect()
 
