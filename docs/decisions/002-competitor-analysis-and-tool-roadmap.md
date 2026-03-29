@@ -447,8 +447,10 @@ surface must follow that contract instead of claiming dB input.
 - `fold_group` — fold/unfold group track
 
 #### Groove Pool (2 tools)
-- `get_groove_pool` — list available grooves
-- `apply_groove` — apply groove to clip
+| MCP Tool | Remote Script Command |
+|----------|-----------------------|
+| `get_groove_pool` | `groove.get_pool` |
+| `apply_groove` | `groove.apply` |
 
 **Phase 3 total: 14 tools** (cumulative: 79 tools)
 
