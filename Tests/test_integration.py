@@ -50,6 +50,34 @@ class _EchoHandler:
 
 class _BrowserHandler:
     def handle_get_tree(self, params):
+        if params.get("category") == "plugins":
+            return {
+                "categories": [
+                    {
+                        "name": "Plugins",
+                        "uri": "browser:plugins",
+                        "is_folder": True,
+                        "is_loadable": False,
+                        "children": [
+                            {
+                                "name": "Arturia",
+                                "uri": "browser:plugins/arturia",
+                                "is_folder": True,
+                                "is_loadable": False,
+                                "children": [
+                                    {
+                                        "name": "Mini V",
+                                        "uri": "browser:plugins/arturia/mini-v",
+                                        "is_folder": False,
+                                        "is_loadable": True,
+                                        "children": [],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
         return {
             "categories": [
                 {
@@ -497,6 +525,27 @@ class TestFullRoundTrip:
         category = resp.result["categories"][0]
         assert category["name"] == "Instruments"
         assert category["children"][0]["children"][0]["name"] == "Analog"
+
+        await conn.disconnect()
+
+    async def test_plugins_browser_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="browser.get_tree",
+            params={"category": "plugins"},
+            id="browser-plugins-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "browser-plugins-1"
+        assert resp.result is not None
+        category = resp.result["categories"][0]
+        assert category["name"] == "Plugins"
+        assert category["children"][0]["children"][0]["name"] == "Mini V"
 
         await conn.disconnect()
 

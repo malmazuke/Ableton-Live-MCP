@@ -21,6 +21,8 @@ BrowserCategory = Literal[
     "drums",
     "audio_effects",
     "midi_effects",
+    "plugins",
+    "plug_ins",
 ]
 
 
@@ -89,16 +91,17 @@ async def get_browser_tree(
         Field(
             description=(
                 "Browser root to inspect: one category or 'all' for every "
-                "supported Phase 1 Browser category."
+                "supported Browser category, including plugins."
             ),
         ),
     ] = "all",
 ) -> BrowserTree:
     """Get a shallow hierarchical Browser tree for supported categories."""
     connection = _get_connection(ctx)
+    normalized_category = "plugins" if category == "plug_ins" else category
     request = CommandRequest(
         command="browser.get_tree",
-        params={"category": category},
+        params={"category": normalized_category},
     )
     response = await connection.send_command(request)
     response.raise_on_error()
@@ -113,7 +116,8 @@ async def get_browser_items(
         Field(
             description=(
                 "Slash-separated Browser path rooted at a supported category, "
-                "for example 'instruments' or 'instruments/Synths'."
+                "for example 'instruments', 'plugins', or "
+                "'instruments/Synths'."
             ),
             min_length=1,
         ),
@@ -145,16 +149,17 @@ async def search_browser(
         Field(
             description=(
                 "Browser root to search: one category or 'all' for every "
-                "supported Phase 1 Browser category."
+                "supported Browser category, including plugins."
             ),
         ),
     ] = "all",
 ) -> BrowserSearchResult:
     """Search Browser items recursively by name."""
     connection = _get_connection(ctx)
+    normalized_category = "plugins" if category == "plug_ins" else category
     request = CommandRequest(
         command="browser.search",
-        params={"query": query, "category": category},
+        params={"query": query, "category": normalized_category},
     )
     response = await connection.send_command(request)
     response.raise_on_error()

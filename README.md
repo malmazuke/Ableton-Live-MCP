@@ -170,7 +170,7 @@ troubleshooting guide.
 
 ## Current status
 
-The communication layer between the MCP server and Ableton's Remote Script is built and tested. The current implementation now includes transport/session/recording with undo/redo, track management and routing, scene management, session clips, audio file import to session and arrangement, clip loop/color editing, audio clip gain/pitch/warp editing, clip automation read/write, MIDI notes, arrangement clips and locators, browser navigation, device parameters, groove pool access, and mixer control for track volume/pan, sends, return tracks, and master volume. Remaining work focuses on the rest of the roadmap such as broader return/master addressing.
+The communication layer between the MCP server and Ableton's Remote Script is built and tested. The current implementation now includes transport/session/recording with undo/redo, track management and routing, scene management, session clips, audio file import to session and arrangement, clip loop/color editing, audio clip gain/pitch/warp editing, clip automation read/write, MIDI notes, arrangement clips and locators, browser navigation including plug-ins, device parameters, groove pool access, and mixer control for track volume/pan, sends, return tracks, and master volume. Remaining work focuses on the rest of the roadmap such as broader return/master addressing.
 
 See the [project board](https://github.com/users/malmazuke/projects/1) for detailed progress and planned work.
 
