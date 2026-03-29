@@ -483,7 +483,14 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 |----------|---------------------|
 | `get_session_info` | `session.get_info` |
 | `set_tempo` | `session.set_tempo` |
+| `set_time_signature` | `session.set_time_signature` |
 | `start_playback` | `session.start_playback` |
+| `stop_playback` | `session.stop_playback` |
+| `start_recording` | `session.start_recording` |
+| `stop_recording` | `session.stop_recording` |
+| `capture_midi` | `session.capture_midi` |
+| `set_overdub` | `session.set_overdub` |
+| `get_playback_position` | `session.get_playback_position` |
 | `get_track_info` | `track.get_info` |
 | `create_midi_track` | `track.create_midi` |
 | `create_audio_track` | `track.create_audio` |
