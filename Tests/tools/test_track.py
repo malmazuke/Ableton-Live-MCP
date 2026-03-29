@@ -11,25 +11,43 @@ if TYPE_CHECKING:
 from pydantic import ValidationError
 
 from mcp_ableton._app import mcp
-from mcp_ableton.protocol import CommandError, CommandResponse, ErrorDetail
+from mcp_ableton.protocol import (
+    CommandError,
+    CommandRequest,
+    CommandResponse,
+    ErrorDetail,
+)
 from mcp_ableton.tools.track import (
+    AvailableRoutingResult,
+    RoutingOption,
     TrackCreatedResult,
     TrackDeletedResult,
     TrackDuplicatedResult,
     TrackInfo,
+    TrackInputRoutingResult,
+    TrackOutputRoutingResult,
+    TrackRoutingInfo,
     create_audio_track,
     create_midi_track,
     delete_track,
     duplicate_track,
+    get_available_routing,
     get_track_info,
+    get_track_routing,
     set_track_arm,
+    set_track_input_routing,
     set_track_mute,
     set_track_name,
+    set_track_output_routing,
     set_track_solo,
 )
 
 TOOL_NAMES = [
     "get_track_info",
+    "get_track_routing",
+    "get_available_routing",
+    "set_track_input_routing",
+    "set_track_output_routing",
     "create_midi_track",
     "create_audio_track",
     "delete_track",
@@ -71,6 +89,95 @@ TRACK_INFO_RESULT = {
     "clip_slot_has_clip": [False, True],
 }
 
+ROUTING_OPTION_RESULT = {
+    "identifier": "ExtIns",
+    "display_name": "Ext. In",
+}
+
+TRACK_ROUTING_RESULT = {
+    "track_index": 1,
+    "input_routing_type": {
+        "identifier": "ExtIns",
+        "display_name": "Ext. In",
+    },
+    "input_routing_channel": {
+        "identifier": "ExtIns/1",
+        "display_name": "1",
+    },
+    "output_routing_type": {
+        "identifier": "Master",
+        "display_name": "Master",
+    },
+    "output_routing_channel": {
+        "identifier": "Master/Stereo",
+        "display_name": "Stereo",
+    },
+}
+
+AVAILABLE_ROUTING_RESULT = {
+    "track_index": 1,
+    "available_input_routing_types": [
+        {
+            "identifier": "ExtIns",
+            "display_name": "Ext. In",
+        },
+        {
+            "identifier": "Resampling",
+            "display_name": "Resampling",
+        },
+    ],
+    "available_input_routing_channels": [
+        {
+            "identifier": "ExtIns/1",
+            "display_name": "1",
+        },
+        {
+            "identifier": "ExtIns/2",
+            "display_name": "2",
+        },
+    ],
+    "available_output_routing_types": [
+        {
+            "identifier": "Master",
+            "display_name": "Master",
+        },
+        {
+            "identifier": "SendsOnly",
+            "display_name": "Sends Only",
+        },
+    ],
+    "available_output_routing_channels": [
+        {
+            "identifier": "Master/Stereo",
+            "display_name": "Stereo",
+        }
+    ],
+}
+
+TRACK_INPUT_ROUTING_RESULT = {
+    "track_index": 1,
+    "input_routing_type": {
+        "identifier": "Resampling",
+        "display_name": "Resampling",
+    },
+    "input_routing_channel": {
+        "identifier": "Resampling/PostMixer",
+        "display_name": "Post Mixer",
+    },
+}
+
+TRACK_OUTPUT_ROUTING_RESULT = {
+    "track_index": 1,
+    "output_routing_type": {
+        "identifier": "SendsOnly",
+        "display_name": "Sends Only",
+    },
+    "output_routing_channel": {
+        "identifier": "SendsOnly/PostFX",
+        "display_name": "Post FX",
+    },
+}
+
 
 class TestToolContracts:
     def _get_tool(self, name: str):
@@ -92,6 +199,30 @@ class TestToolContracts:
         props = tool.parameters["properties"]
         assert "track_index" in props
         assert props["track_index"]["minimum"] == 1
+
+    def test_get_track_routing_schema(self) -> None:
+        tool = self._get_tool("get_track_routing")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+
+    def test_get_available_routing_schema(self) -> None:
+        tool = self._get_tool("get_available_routing")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+
+    def test_set_track_input_routing_schema(self) -> None:
+        tool = self._get_tool("set_track_input_routing")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+        assert props["routing_type_identifier"]["minLength"] == 1
+        assert props["routing_channel_identifier"]["minLength"] == 1
+
+    def test_set_track_output_routing_schema(self) -> None:
+        tool = self._get_tool("set_track_output_routing")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+        assert props["routing_type_identifier"]["minLength"] == 1
+        assert props["routing_channel_identifier"]["minLength"] == 1
 
     def test_create_midi_track_index_default(self) -> None:
         tool = self._get_tool("create_midi_track")
@@ -118,6 +249,36 @@ class TestInputValidation:
         model = self._arg_model("get_track_info")
         args = model(track_index=3)
         assert args.track_index == 3
+
+    def test_set_track_input_routing_rejects_empty_identifiers(self) -> None:
+        model = self._arg_model("set_track_input_routing")
+        with pytest.raises(ValidationError):
+            model(
+                track_index=1,
+                routing_type_identifier="",
+                routing_channel_identifier="ExtIns/1",
+            )
+        with pytest.raises(ValidationError):
+            model(
+                track_index=1,
+                routing_type_identifier="ExtIns",
+                routing_channel_identifier="",
+            )
+
+    def test_set_track_output_routing_rejects_empty_identifiers(self) -> None:
+        model = self._arg_model("set_track_output_routing")
+        with pytest.raises(ValidationError):
+            model(
+                track_index=1,
+                routing_type_identifier="",
+                routing_channel_identifier="Master/Stereo",
+            )
+        with pytest.raises(ValidationError):
+            model(
+                track_index=1,
+                routing_type_identifier="Master",
+                routing_channel_identifier="",
+            )
 
     def test_set_track_name_rejects_empty_name(self) -> None:
         model = self._arg_model("set_track_name")
@@ -158,6 +319,135 @@ class TestGetTrackInfo:
         )
         with pytest.raises(CommandError, match="NOT_FOUND"):
             await get_track_info(ctx=mock_context, track_index=9)
+
+
+class TestRoutingTools:
+    async def test_get_track_routing_returns_typed_result(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(TRACK_ROUTING_RESULT)
+
+        result = await get_track_routing(ctx=mock_context, track_index=1)
+
+        assert isinstance(result, TrackRoutingInfo)
+        assert result.input_routing_type.identifier == "ExtIns"
+        assert result.output_routing_channel.display_name == "Stereo"
+
+    async def test_get_track_routing_sends_correct_command(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(TRACK_ROUTING_RESULT)
+
+        await get_track_routing(ctx=mock_context, track_index=2)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert isinstance(req, CommandRequest)
+        assert req.command == "track.get_routing"
+        assert req.params == {"track_index": 2}
+
+    async def test_get_available_routing_returns_typed_result(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            AVAILABLE_ROUTING_RESULT
+        )
+
+        result = await get_available_routing(ctx=mock_context, track_index=1)
+
+        assert isinstance(result, AvailableRoutingResult)
+        assert result.available_input_routing_types[0].identifier == "ExtIns"
+        assert result.available_output_routing_channels[0].display_name == "Stereo"
+
+    async def test_get_available_routing_raises_on_error(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="Track 1 has no available input routing types",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await get_available_routing(ctx=mock_context, track_index=1)
+
+    async def test_set_track_input_routing_sends_identifiers(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            TRACK_INPUT_ROUTING_RESULT
+        )
+
+        result = await set_track_input_routing(
+            ctx=mock_context,
+            track_index=1,
+            routing_type_identifier="Resampling",
+            routing_channel_identifier="Resampling/PostMixer",
+        )
+
+        assert isinstance(result, TrackInputRoutingResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert isinstance(req, CommandRequest)
+        assert req.command == "track.set_input_routing"
+        assert req.params == {
+            "track_index": 1,
+            "routing_type_identifier": "Resampling",
+            "routing_channel_identifier": "Resampling/PostMixer",
+        }
+
+    async def test_set_track_output_routing_sends_identifiers(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            TRACK_OUTPUT_ROUTING_RESULT
+        )
+
+        result = await set_track_output_routing(
+            ctx=mock_context,
+            track_index=2,
+            routing_type_identifier="SendsOnly",
+            routing_channel_identifier="SendsOnly/PostFX",
+        )
+
+        assert isinstance(result, TrackOutputRoutingResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert isinstance(req, CommandRequest)
+        assert req.command == "track.set_output_routing"
+        assert req.params == {
+            "track_index": 2,
+            "routing_type_identifier": "SendsOnly",
+            "routing_channel_identifier": "SendsOnly/PostFX",
+        }
+
+    async def test_set_track_input_routing_raises_on_not_found(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="NOT_FOUND",
+            message="Track 1 has no input routing type with identifier 'Bogus'",
+        )
+
+        with pytest.raises(CommandError, match="NOT_FOUND"):
+            await set_track_input_routing(
+                ctx=mock_context,
+                track_index=1,
+                routing_type_identifier="Bogus",
+                routing_channel_identifier="ExtIns/1",
+            )
+
+    async def test_set_track_output_routing_raises_on_invalid_params(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="Track 1 does not support available output routing types",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await set_track_output_routing(
+                ctx=mock_context,
+                track_index=1,
+                routing_type_identifier="Master",
+                routing_channel_identifier="Master/Stereo",
+            )
 
 
 class TestCreateMidiTrack:
@@ -287,3 +577,23 @@ class TestResponseModels:
     def test_track_info_accepts_valid(self) -> None:
         t = TrackInfo.model_validate(TRACK_INFO_RESULT)
         assert t.device_names == ["Instrument Rack"]
+
+    def test_routing_option_accepts_valid(self) -> None:
+        option = RoutingOption.model_validate(ROUTING_OPTION_RESULT)
+        assert option.identifier == "ExtIns"
+
+    def test_track_routing_info_accepts_valid(self) -> None:
+        result = TrackRoutingInfo.model_validate(TRACK_ROUTING_RESULT)
+        assert result.output_routing_type.identifier == "Master"
+
+    def test_available_routing_result_accepts_valid(self) -> None:
+        result = AvailableRoutingResult.model_validate(AVAILABLE_ROUTING_RESULT)
+        assert len(result.available_input_routing_types) == 2
+
+    def test_track_input_routing_result_accepts_valid(self) -> None:
+        result = TrackInputRoutingResult.model_validate(TRACK_INPUT_ROUTING_RESULT)
+        assert result.input_routing_channel.display_name == "Post Mixer"
+
+    def test_track_output_routing_result_accepts_valid(self) -> None:
+        result = TrackOutputRoutingResult.model_validate(TRACK_OUTPUT_ROUTING_RESULT)
+        assert result.output_routing_channel.identifier == "SendsOnly/PostFX"

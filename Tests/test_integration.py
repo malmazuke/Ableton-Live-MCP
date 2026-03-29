@@ -269,6 +269,29 @@ class _ClipHandler:
         }
 
 
+class _TrackHandler:
+    def handle_get_routing(self, params):
+        return {
+            "track_index": params["track_index"],
+            "input_routing_type": {
+                "identifier": "ExtIns",
+                "display_name": "Ext. In",
+            },
+            "input_routing_channel": {
+                "identifier": "ExtIns/1",
+                "display_name": "1",
+            },
+            "output_routing_type": {
+                "identifier": "Master",
+                "display_name": "Master",
+            },
+            "output_routing_channel": {
+                "identifier": "Master/Stereo",
+                "display_name": "Stereo",
+            },
+        }
+
+
 @pytest.fixture
 def tcp_server():
     """Start a real TcpServer in a background thread on an OS-assigned port."""
@@ -281,6 +304,7 @@ def tcp_server():
     dispatcher.register("arrangement", _ArrangementHandler())
     dispatcher.register("scene", _SceneHandler())
     dispatcher.register("clip", _ClipHandler())
+    dispatcher.register("track", _TrackHandler())
 
     logs: list[str] = []
     server = TcpServer(
@@ -446,6 +470,42 @@ class TestFullRoundTrip:
         assert resp.result["scenes"][0]["name"] == "Intro"
         assert resp.result["scenes"][1]["tempo"] is None
         assert resp.result["scenes"][1]["time_signature_denominator"] is None
+
+        await conn.disconnect()
+
+    async def test_track_routing_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="track.get_routing",
+            params={"track_index": 2},
+            id="track-routing-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "track-routing-1"
+        assert resp.result == {
+            "track_index": 2,
+            "input_routing_type": {
+                "identifier": "ExtIns",
+                "display_name": "Ext. In",
+            },
+            "input_routing_channel": {
+                "identifier": "ExtIns/1",
+                "display_name": "1",
+            },
+            "output_routing_type": {
+                "identifier": "Master",
+                "display_name": "Master",
+            },
+            "output_routing_channel": {
+                "identifier": "Master/Stereo",
+                "display_name": "Stereo",
+            },
+        }
 
         await conn.disconnect()
 

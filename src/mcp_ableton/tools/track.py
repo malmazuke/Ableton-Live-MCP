@@ -56,6 +56,49 @@ class TrackUpdatedResult(BaseModel):
     track_index: int
 
 
+class RoutingOption(BaseModel):
+    """A routing option returned by Ableton Live."""
+
+    identifier: str
+    display_name: str
+
+
+class TrackRoutingInfo(BaseModel):
+    """Current routing selections for one track."""
+
+    track_index: int
+    input_routing_type: RoutingOption
+    input_routing_channel: RoutingOption
+    output_routing_type: RoutingOption
+    output_routing_channel: RoutingOption
+
+
+class AvailableRoutingResult(BaseModel):
+    """Available routing choices for one track."""
+
+    track_index: int
+    available_input_routing_types: list[RoutingOption]
+    available_input_routing_channels: list[RoutingOption]
+    available_output_routing_types: list[RoutingOption]
+    available_output_routing_channels: list[RoutingOption]
+
+
+class TrackInputRoutingResult(BaseModel):
+    """Result of ``set_track_input_routing``."""
+
+    track_index: int
+    input_routing_type: RoutingOption
+    input_routing_channel: RoutingOption
+
+
+class TrackOutputRoutingResult(BaseModel):
+    """Result of ``set_track_output_routing``."""
+
+    track_index: int
+    output_routing_type: RoutingOption
+    output_routing_channel: RoutingOption
+
+
 def _get_connection(ctx: Context) -> AbletonConnection:
     connection: AbletonConnection = ctx.request_context.lifespan_context.connection
     return connection
@@ -85,6 +128,124 @@ async def get_track_info(
     response = await connection.send_command(request)
     response.raise_on_error()
     return TrackInfo.model_validate(response.result)
+
+
+@mcp.tool()
+async def get_track_routing(
+    ctx: Context,
+    track_index: Annotated[
+        int,
+        Field(
+            description="1-based index of the track.",
+            ge=1,
+        ),
+    ],
+) -> TrackRoutingInfo:
+    """Get the current input/output routing selections for a track."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="track.get_routing",
+        params={"track_index": track_index},
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return TrackRoutingInfo.model_validate(response.result)
+
+
+@mcp.tool()
+async def get_available_routing(
+    ctx: Context,
+    track_index: Annotated[
+        int,
+        Field(
+            description="1-based index of the track.",
+            ge=1,
+        ),
+    ],
+) -> AvailableRoutingResult:
+    """Get the available input/output routing options for a track."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="track.get_available_routing",
+        params={"track_index": track_index},
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return AvailableRoutingResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def set_track_input_routing(
+    ctx: Context,
+    track_index: Annotated[
+        int,
+        Field(description="1-based index of the track.", ge=1),
+    ],
+    routing_type_identifier: Annotated[
+        str,
+        Field(
+            description="Identifier of the target input routing type.",
+            min_length=1,
+        ),
+    ],
+    routing_channel_identifier: Annotated[
+        str,
+        Field(
+            description="Identifier of the target input routing channel.",
+            min_length=1,
+        ),
+    ],
+) -> TrackInputRoutingResult:
+    """Set a track's input routing using routing identifiers."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="track.set_input_routing",
+        params={
+            "track_index": track_index,
+            "routing_type_identifier": routing_type_identifier,
+            "routing_channel_identifier": routing_channel_identifier,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return TrackInputRoutingResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def set_track_output_routing(
+    ctx: Context,
+    track_index: Annotated[
+        int,
+        Field(description="1-based index of the track.", ge=1),
+    ],
+    routing_type_identifier: Annotated[
+        str,
+        Field(
+            description="Identifier of the target output routing type.",
+            min_length=1,
+        ),
+    ],
+    routing_channel_identifier: Annotated[
+        str,
+        Field(
+            description="Identifier of the target output routing channel.",
+            min_length=1,
+        ),
+    ],
+) -> TrackOutputRoutingResult:
+    """Set a track's output routing using routing identifiers."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="track.set_output_routing",
+        params={
+            "track_index": track_index,
+            "routing_type_identifier": routing_type_identifier,
+            "routing_channel_identifier": routing_channel_identifier,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return TrackOutputRoutingResult.model_validate(response.result)
 
 
 @mcp.tool()
@@ -291,18 +452,27 @@ async def set_track_arm(
 
 
 __all__ = [
+    "AvailableRoutingResult",
+    "RoutingOption",
     "TrackCreatedResult",
     "TrackDeletedResult",
     "TrackDuplicatedResult",
     "TrackInfo",
+    "TrackInputRoutingResult",
+    "TrackOutputRoutingResult",
+    "TrackRoutingInfo",
     "TrackUpdatedResult",
     "create_audio_track",
     "create_midi_track",
     "delete_track",
     "duplicate_track",
+    "get_available_routing",
     "get_track_info",
+    "get_track_routing",
+    "set_track_input_routing",
     "set_track_arm",
     "set_track_mute",
     "set_track_name",
+    "set_track_output_routing",
     "set_track_solo",
 ]
