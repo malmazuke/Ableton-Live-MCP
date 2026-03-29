@@ -80,6 +80,16 @@ class ClipHandler(NoteMixin, BaseHandler):
 
         return clip, track_index, slot_index
 
+    def _resolve_audio_clip(self, params: dict[str, Any]) -> tuple[Any, int, int]:
+        """Return ``(clip, track_index_1based, clip_slot_index_1based)`` or raise."""
+        _track, clip, track_index, slot_index = self._resolve_existing_clip(params)
+        if not bool(clip.is_audio_clip):
+            raise InvalidParamsError(
+                f"Clip slot {slot_index} on track {track_index} is not an audio clip"
+            )
+
+        return clip, track_index, slot_index
+
     def _resolve_device(
         self,
         track: Any,
@@ -194,6 +204,24 @@ class ClipHandler(NoteMixin, BaseHandler):
             )
 
         return normalized
+
+    def _get_clip_gain_display_string(self, clip: Any) -> str:
+        """Return Live's gain display string when the runtime exposes it."""
+        display = getattr(clip, "gain_display_string", None)
+        if display is None:
+            return str(getattr(clip, "gain", ""))
+        return str(display)
+
+    def _get_available_warp_modes(self, clip: Any) -> tuple[int, ...] | None:
+        """Return runtime-supported warp modes if the clip exposes them."""
+        raw_modes = getattr(clip, "available_warp_modes", None)
+        if raw_modes is None:
+            return None
+
+        try:
+            return tuple(int(mode) for mode in raw_modes)
+        except TypeError:
+            return None
 
     def _clip_automation_envelope(self, clip: Any, parameter: Any) -> Any | None:
         """Return the envelope for a clip/parameter pair if the runtime exposes it."""
@@ -561,6 +589,99 @@ class ClipHandler(NoteMixin, BaseHandler):
                 "track_index": track_index,
                 "clip_slot_index": slot_index,
                 "color_index": int(clip.color_index),
+            }
+
+        return self._run_on_main_thread(_do)
+
+    def handle_set_gain(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Set normalized gain for an existing session audio clip."""
+        gain = self._require_number(
+            params,
+            "gain",
+            label="params",
+            minimum=0.0,
+            maximum=1.0,
+        )
+
+        def _do() -> dict[str, Any]:
+            clip, track_index, slot_index = self._resolve_audio_clip(params)
+            try:
+                clip.gain = gain
+            except Exception as exc:
+                raise InvalidParamsError(f"Failed to set clip gain: {exc}") from exc
+
+            return {
+                "track_index": track_index,
+                "clip_slot_index": slot_index,
+                "gain": float(clip.gain),
+                "gain_display_string": self._get_clip_gain_display_string(clip),
+            }
+
+        return self._run_on_main_thread(_do)
+
+    def handle_set_pitch(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Set coarse transpose in semitones for an existing session audio clip."""
+        semitones = self._require_int(
+            params,
+            "semitones",
+            label="params",
+            minimum=-48,
+            maximum=48,
+        )
+
+        def _do() -> dict[str, Any]:
+            clip, track_index, slot_index = self._resolve_audio_clip(params)
+            try:
+                clip.pitch_coarse = semitones
+            except Exception as exc:
+                raise InvalidParamsError(f"Failed to set clip pitch: {exc}") from exc
+
+            return {
+                "track_index": track_index,
+                "clip_slot_index": slot_index,
+                "semitones": int(clip.pitch_coarse),
+            }
+
+        return self._run_on_main_thread(_do)
+
+    def handle_set_warp_mode(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Set the warp mode for an existing session audio clip."""
+        warp_mode = self._require_int(
+            params,
+            "warp_mode",
+            label="params",
+            minimum=0,
+        )
+
+        def _do() -> dict[str, Any]:
+            clip, track_index, slot_index = self._resolve_audio_clip(params)
+            try:
+                if hasattr(clip, "warping") and not bool(clip.warping):
+                    clip.warping = True
+
+                available_warp_modes = self._get_available_warp_modes(clip)
+                if (
+                    available_warp_modes is not None
+                    and warp_mode not in available_warp_modes
+                ):
+                    raise InvalidParamsError(
+                        f"Warp mode {warp_mode} is not available for clip slot "
+                        f"{slot_index} on track {track_index}; available modes: "
+                        f"{list(available_warp_modes)}"
+                    )
+
+                clip.warp_mode = warp_mode
+            except InvalidParamsError:
+                raise
+            except Exception as exc:
+                raise InvalidParamsError(
+                    f"Failed to set clip warp mode: {exc}"
+                ) from exc
+
+            return {
+                "track_index": track_index,
+                "clip_slot_index": slot_index,
+                "warp_mode": int(clip.warp_mode),
             }
 
         return self._run_on_main_thread(_do)

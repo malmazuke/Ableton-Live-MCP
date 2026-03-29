@@ -221,6 +221,28 @@ class _ClipHandler:
             "color_index": params["color_index"],
         }
 
+    def handle_set_gain(self, params):
+        return {
+            "track_index": params["track_index"],
+            "clip_slot_index": params["clip_slot_index"],
+            "gain": params["gain"],
+            "gain_display_string": "-6.0 dB",
+        }
+
+    def handle_set_pitch(self, params):
+        return {
+            "track_index": params["track_index"],
+            "clip_slot_index": params["clip_slot_index"],
+            "semitones": params["semitones"],
+        }
+
+    def handle_set_warp_mode(self, params):
+        return {
+            "track_index": params["track_index"],
+            "clip_slot_index": params["clip_slot_index"],
+            "warp_mode": params["warp_mode"],
+        }
+
     def handle_get_automation(self, params):
         return {
             "track_index": params["track_index"],
@@ -594,6 +616,85 @@ class TestFullRoundTrip:
             "file_path": "/tmp/drums.wav",
             "length": 6.5,
             "is_audio_clip": True,
+        }
+
+        await conn.disconnect()
+
+    async def test_clip_gain_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="clip.set_gain",
+            params={
+                "track_index": 2,
+                "clip_slot_index": 1,
+                "gain": 0.5,
+            },
+            id="clip-gain-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "clip-gain-1"
+        assert resp.result == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "gain": 0.5,
+            "gain_display_string": "-6.0 dB",
+        }
+
+        await conn.disconnect()
+
+    async def test_clip_pitch_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="clip.set_pitch",
+            params={
+                "track_index": 2,
+                "clip_slot_index": 1,
+                "semitones": -12,
+            },
+            id="clip-pitch-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "clip-pitch-1"
+        assert resp.result == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "semitones": -12,
+        }
+
+        await conn.disconnect()
+
+    async def test_clip_warp_mode_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="clip.set_warp_mode",
+            params={
+                "track_index": 2,
+                "clip_slot_index": 1,
+                "warp_mode": 6,
+            },
+            id="clip-warp-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "clip-warp-1"
+        assert resp.result == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "warp_mode": 6,
         }
 
         await conn.disconnect()

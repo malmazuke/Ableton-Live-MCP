@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,11 @@ class _Clip:
         length: float = 4.0,
         *,
         audio: bool = False,
+        gain: float = 1.0,
+        pitch_coarse: int = 0,
+        warp_mode: int = 0,
+        warping: bool = True,
+        available_warp_modes: list[int] | None = None,
         notes: list[dict[str, object]] | None = None,
     ) -> None:
         self.name = name
@@ -56,6 +62,11 @@ class _Clip:
         self.color_index = 0
         self.is_playing = False
         self.is_recording = False
+        self._gain = float(gain)
+        self.pitch_coarse = pitch_coarse
+        self.warp_mode = warp_mode
+        self.warping = warping
+        self.available_warp_modes = list(available_warp_modes or [0, 1, 2, 6])
         self._notes: list[dict[str, object]] = []
         self._next_note_id = 1
         self._automation_envelopes: dict[int, _AutomationEnvelope] = {}
@@ -67,6 +78,20 @@ class _Clip:
     @property
     def notes(self) -> list[dict[str, object]]:
         return [dict(note) for note in self._notes]
+
+    @property
+    def gain(self) -> float:
+        return self._gain
+
+    @gain.setter
+    def gain(self, value: float) -> None:
+        self._gain = float(value)
+
+    @property
+    def gain_display_string(self) -> str:
+        if self._gain <= 0.0:
+            return "-inf dB"
+        return f"{20.0 * math.log10(self._gain):.1f} dB"
 
     def get_all_notes_extended(self):
         return tuple(self.notes)
@@ -273,6 +298,22 @@ class _SongWithClipTracks(_FakeSong):
                     ),
                 ],
             ),
+            _track_with_slots(
+                _Slot(
+                    _Clip(
+                        "Drums",
+                        6.5,
+                        audio=True,
+                        gain=0.5,
+                        pitch_coarse=0,
+                        warp_mode=0,
+                        available_warp_modes=[0, 1, 2, 6],
+                    )
+                ),
+                _Slot(),
+                midi=False,
+                audio=True,
+            ),
         ]
 
 
@@ -288,6 +329,11 @@ class _TrackDup(_Track):
                     name=clip.name + " 2",
                     length=clip.length,
                     audio=clip.is_audio_clip,
+                    gain=clip.gain,
+                    pitch_coarse=clip.pitch_coarse,
+                    warp_mode=clip.warp_mode,
+                    warping=clip.warping,
+                    available_warp_modes=list(clip.available_warp_modes),
                     notes=clip.notes,
                 )
                 self.clip_slots[slot_index].has_clip = True
@@ -558,6 +604,88 @@ class TestLoopAndColor:
                     "clip_slot_index": 1,
                     "color_index": 3,
                 }
+            )
+
+
+class TestAudioClipOperations:
+    def test_set_clip_pitch_success_on_audio_clip(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        result = handler_clip.handle_set_pitch(
+            {"track_index": 2, "clip_slot_index": 1, "semitones": -7},
+        )
+
+        assert result == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "semitones": -7,
+        }
+        assert song_clip.tracks[1].clip_slots[0].clip.pitch_coarse == -7
+
+    def test_set_clip_pitch_rejects_midi_clip(
+        self,
+        handler_clip: ClipHandler,
+    ) -> None:
+        with pytest.raises(InvalidParamsError, match="not an audio clip"):
+            handler_clip.handle_set_pitch(
+                {"track_index": 1, "clip_slot_index": 2, "semitones": 3},
+            )
+
+    def test_set_clip_warp_mode_success_on_audio_clip(
+        self,
+        handler_clip: ClipHandler,
+        song_clip: _SongWithClipTracks,
+    ) -> None:
+        song_clip.tracks[1].clip_slots[0].clip.warping = False
+
+        result = handler_clip.handle_set_warp_mode(
+            {"track_index": 2, "clip_slot_index": 1, "warp_mode": 2},
+        )
+
+        assert result == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "warp_mode": 2,
+        }
+        clip = song_clip.tracks[1].clip_slots[0].clip
+        assert clip.warping is True
+        assert clip.warp_mode == 2
+
+    def test_set_clip_warp_mode_rejects_invalid_mode(
+        self,
+        handler_clip: ClipHandler,
+    ) -> None:
+        with pytest.raises(
+            InvalidParamsError, match="available modes: \\[0, 1, 2, 6\\]"
+        ):
+            handler_clip.handle_set_warp_mode(
+                {"track_index": 2, "clip_slot_index": 1, "warp_mode": 99},
+            )
+
+    def test_set_clip_gain_success(
+        self,
+        handler_clip: ClipHandler,
+    ) -> None:
+        result = handler_clip.handle_set_gain(
+            {"track_index": 2, "clip_slot_index": 1, "gain": 0.25},
+        )
+
+        assert result == {
+            "track_index": 2,
+            "clip_slot_index": 1,
+            "gain": 0.25,
+            "gain_display_string": "-12.0 dB",
+        }
+
+    def test_set_clip_gain_missing_clip_returns_not_found(
+        self,
+        handler_clip: ClipHandler,
+    ) -> None:
+        with pytest.raises(NotFoundError, match="No clip in slot 2 on track 2"):
+            handler_clip.handle_set_gain(
+                {"track_index": 2, "clip_slot_index": 2, "gain": 0.5},
             )
 
 
