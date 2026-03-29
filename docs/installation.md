@@ -1,13 +1,9 @@
 # Installation Guide
 
-This is the canonical installation guide for Ableton Live MCP.
+This guide walks you through installing Ableton Live MCP, connecting it to
+Ableton Live, and checking that everything works.
 
-- macOS steps in this document were checked against the current repository, the
-  `mcp-ableton-setup` installer, and a local Ableton Live 12.2.5 setup on
-  March 29, 2026.
-- Windows steps were documented from `src/mcp_ableton/setup.py`, the repo
-  layout, and the current CLI surface. They were not live-tested in this
-  change.
+If you are setting this up for the first time, follow the sections in order.
 
 ## Prerequisites
 
@@ -28,25 +24,25 @@ cd Ableton-Live-MCP
 uv sync
 ```
 
-This installs the project and exposes two CLI entry points:
+This installs the project and gives you two commands:
 
 - `mcp-ableton`
 - `mcp-ableton-setup`
 
 ## 2. Install the Remote Script into Ableton
 
-The recommended path is the setup tool:
+The easiest way is to use the setup tool:
 
 ```bash
 uv run mcp-ableton-setup
 ```
 
-The installer:
+It will:
 
-1. Locates `remote_script/AbletonLiveMCP` inside this repository.
-2. Detects existing Ableton Remote Script directories for the current OS.
-3. Installs `AbletonLiveMCP` there as a symlink by default.
-4. Prints the next Ableton configuration steps.
+1. Locate `remote_script/AbletonLiveMCP` inside this repository.
+2. Detect existing Ableton Remote Script directories for the current OS.
+3. Install `AbletonLiveMCP` there as a symlink by default.
+4. Print the next Ableton configuration steps.
 
 ### Supported installer options
 
@@ -60,7 +56,7 @@ uv run mcp-ableton-setup --uninstall
 uv run mcp-ableton-setup --uninstall --target "/path/to/Remote Scripts"
 ```
 
-### Install locations
+### Where the installer looks
 
 The installer auto-detects these directories when they already exist.
 
@@ -68,11 +64,6 @@ The installer auto-detects these directories when they already exist.
 
 - User Library: `~/Music/Ableton/User Library/Remote Scripts`
 - Per-version fallback: `~/Library/Preferences/Ableton/Live <version>/User Remote Scripts`
-
-On this machine, the verified macOS paths are:
-
-- `~/Music/Ableton/User Library/Remote Scripts`
-- `~/Library/Preferences/Ableton/Live 12.2.5/User Remote Scripts`
 
 **Windows**
 
@@ -83,6 +74,9 @@ On this machine, the verified macOS paths are:
 If the macOS or Windows User Library path exists, the installer selects it
 automatically. If only per-version directories exist, it may prompt you to pick
 one. If nothing exists, it exits and tells you which default path it expected.
+
+If the Windows paths on your machine look different, use `--target` to point
+the installer at the correct `Remote Scripts` folder.
 
 ### Symlink vs copy
 
@@ -98,8 +92,8 @@ policy or Developer Mode is disabled.
 
 ### Manual installation fallback
 
-Use this only if the installer cannot detect your target directory or you want
-to manage the files yourself.
+Use this only if the installer cannot find your Ableton folder or you prefer to
+manage the files yourself.
 
 **macOS symlink**
 
@@ -135,21 +129,20 @@ Copy-Item -Recurse remote_script\AbletonLiveMCP `
 5. Set `Input` to `None`.
 6. Set `Output` to `None`.
 
-What you should expect:
+When it works:
 
 - Ableton's status bar briefly shows `AbletonLiveMCP: listening on port 9877`.
 - The Ableton log records
   `AbletonLiveMCP TCP server listening on 127.0.0.1:9877`.
 
-If the control surface does not appear, go to
+If `AbletonLiveMCP` does not appear in the list, go to
 [Troubleshooting](#troubleshooting).
 
 ## 4. Configure your MCP client
 
 ### Cursor
 
-Cursor's official MCP docs support `mcp.json` configuration. The most reliable
-project-local setup is `.cursor/mcp.json` at the repo root:
+Create `.cursor/mcp.json` in the repository root:
 
 ```json
 {
@@ -162,7 +155,7 @@ project-local setup is `.cursor/mcp.json` at the repo root:
 }
 ```
 
-If you prefer a global Cursor config, use the same shape but replace
+If you prefer a global Cursor config instead, use the same JSON and replace
 `${workspaceFolder}` with the absolute path to this repository.
 
 After saving the config, reload Cursor if it does not automatically start the
@@ -170,7 +163,7 @@ server.
 
 ### Claude Desktop
 
-Claude Desktop uses `claude_desktop_config.json`.
+Claude Desktop reads MCP servers from `claude_desktop_config.json`.
 
 - macOS:
   `~/Library/Application Support/Claude/claude_desktop_config.json`
@@ -200,55 +193,57 @@ Restart Claude Desktop after saving the file.
 
 ## 5. Verify the setup
 
-### Installer verification
+Start with the easiest checks:
 
-Check the installer without changing anything:
+1. Run the installer in preview mode.
+2. Confirm Ableton loaded the control surface.
+3. Ask your MCP client for a simple read-only command.
+
+### Check the installer
+
+Run:
 
 ```bash
 uv run mcp-ableton-setup --dry-run
 ```
 
-On the verified macOS setup used for this update, that command reported:
+You should see the Remote Scripts directory the installer wants to use. If the
+script is already installed, you should also see whether it is installed as a
+symlink or a copied folder.
 
-- the detected User Library Remote Scripts directory
-- that `AbletonLiveMCP` was already installed there as a symlink
+### Check Ableton
 
-### Ableton verification
-
-Confirm all three of these:
+Confirm all three:
 
 1. `AbletonLiveMCP` is selected as a control surface.
 2. `Input` and `Output` are both `None`.
 3. Ableton is listening on port `9877`.
 
-Useful checks:
+Helpful commands:
 
 ```bash
 lsof -nP -iTCP:9877 -sTCP:LISTEN
 tail -n 50 "$HOME/Library/Preferences/Ableton/Live 12.2.5/Log.txt"
 ```
 
-### MCP verification
+### Check from your MCP client
 
 With Ableton running and the control surface active, ask your MCP client for a
-simple read-only action such as:
+simple read-only action:
 
 - `Get the current Ableton session info`
 - `List the current session tempo and track count`
 
-At the protocol level, that should end up calling the server's
-`get_session_info` tool.
-
-If you prefer a local code-level smoke test, this should succeed when Ableton
-is listening:
+If you want to test the TCP connection directly from the terminal, this should
+work while Ableton is running and listening:
 
 ```bash
 uv run python -c $'import asyncio, json\nfrom mcp_ableton.connection import AbletonConnection\nfrom mcp_ableton.protocol import CommandRequest\n\nasync def main() -> None:\n    conn = AbletonConnection()\n    try:\n        await conn.connect()\n        response = await conn.send_command(CommandRequest(command="session.get_info"))\n        print(json.dumps(response.model_dump(), indent=2))\n    finally:\n        await conn.disconnect()\n\nasyncio.run(main())'
 ```
 
 If that command fails with `Connect call failed ... 9877`, Ableton is not
-currently listening and the problem is on the Live/Remote Script side, not in
-the MCP client config.
+listening on the expected port yet. In that case, go back to the Ableton setup
+and troubleshooting steps below.
 
 ## Uninstall
 
