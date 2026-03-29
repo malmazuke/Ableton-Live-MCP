@@ -501,6 +501,10 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `get_browser_tree` | `browser.get_tree` |
 | `get_browser_items` | `browser.get_items` |
 | `search_browser` | `browser.search` |
+| `set_track_volume` | `mixer.set_track_volume` |
+| `set_track_pan` | `mixer.set_track_pan` |
+| `get_master_info` | `mixer.get_master_info` |
+| `set_master_volume` | `mixer.set_master_volume` |
 
 ### Threading model (same as competitors, proven pattern)
 

@@ -7,6 +7,7 @@ issues as the tool surface grows.
 from .browser import BrowserHandler
 from .clip import ClipHandler
 from .device import DeviceHandler
+from .mixer import MixerHandler
 from .session import SessionHandler
 from .track import TrackHandler
 
@@ -14,6 +15,7 @@ __all__ = [
     "BrowserHandler",
     "ClipHandler",
     "DeviceHandler",
+    "MixerHandler",
     "SessionHandler",
     "TrackHandler",
 ]

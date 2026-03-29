@@ -85,6 +85,15 @@ class _DeviceHandler:
         }
 
 
+class _MixerHandler:
+    def handle_get_master_info(self, params):
+        return {
+            "name": "Master",
+            "volume": 0.88,
+            "pan": 0.0,
+        }
+
+
 @pytest.fixture
 def tcp_server():
     """Start a real TcpServer in a background thread on an OS-assigned port."""
@@ -93,6 +102,7 @@ def tcp_server():
     dispatcher.register("session", _EchoHandler())
     dispatcher.register("browser", _BrowserHandler())
     dispatcher.register("device", _DeviceHandler())
+    dispatcher.register("mixer", _MixerHandler())
 
     logs: list[str] = []
     server = TcpServer(
@@ -194,5 +204,24 @@ class TestFullRoundTrip:
         assert resp.result["device_name"] == "Analog"
         assert resp.result["parameters"][0]["parameter_index"] == 1
         assert resp.result["parameters"][1]["name"] == "Filter Freq"
+
+        await conn.disconnect()
+
+    async def test_mixer_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(command="mixer.get_master_info", id="mixer-1")
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "mixer-1"
+        assert resp.result is not None
+        assert resp.result == {
+            "name": "Master",
+            "volume": 0.88,
+            "pan": 0.0,
+        }
 
         await conn.disconnect()
