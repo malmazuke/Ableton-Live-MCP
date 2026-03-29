@@ -26,6 +26,13 @@ class _EchoHandler:
     def handle_get_info(self, params):
         return {"tempo": 120.0, "is_playing": False}
 
+    def handle_start_recording(self, params):
+        return {
+            "action": "start_recording",
+            "is_recording": True,
+            "is_playing": True,
+        }
+
 
 class _BrowserHandler:
     def handle_get_tree(self, params):
@@ -208,6 +215,24 @@ class TestFullRoundTrip:
         assert resp.status == "error"
         assert resp.error is not None
         assert resp.error.code == "UNKNOWN_COMMAND"
+
+        await conn.disconnect()
+
+    async def test_recording_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(command="session.start_recording", id="recording-1")
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "recording-1"
+        assert resp.result == {
+            "action": "start_recording",
+            "is_recording": True,
+            "is_playing": True,
+        }
 
         await conn.disconnect()
 

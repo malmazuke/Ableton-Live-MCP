@@ -1,12 +1,12 @@
-"""MCP tools for session and transport control.
+"""MCP tools for session, transport, and recording control.
 
 Provides tools for querying and controlling Ableton Live's session state:
-tempo, time signature, transport (play/stop), and playback position.
+tempo, time signature, transport, recording, and playback position.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from mcp.server.fastmcp import Context  # noqa: TCH002
 from pydantic import BaseModel, Field
@@ -50,6 +50,27 @@ class TransportResult(BaseModel):
     is_playing: bool
 
 
+class RecordingResult(BaseModel):
+    """Result of an arrangement recording action."""
+
+    action: Literal["start_recording", "stop_recording"]
+    is_recording: bool
+    is_playing: bool
+
+
+class MidiCaptureResult(BaseModel):
+    """Result of a MIDI capture action."""
+
+    destination: Literal["auto", "session", "arrangement"]
+    captured: bool
+
+
+class OverdubResult(BaseModel):
+    """Result of an overdub state change."""
+
+    overdub: bool
+
+
 class PlaybackPosition(BaseModel):
     """Current playback position returned by ``get_playback_position``."""
 
@@ -66,6 +87,19 @@ def _get_connection(ctx: Context) -> AbletonConnection:
     return connection
 
 
+async def _send_session_command(
+    ctx: Context,
+    command: str,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Send a ``session.*`` command and return the result payload."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(command=command, params=params or {})
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return response.result or {}
+
+
 @mcp.tool()
 async def get_session_info(ctx: Context) -> SessionInfo:
     """Get current session information.
@@ -73,11 +107,8 @@ async def get_session_info(ctx: Context) -> SessionInfo:
     Returns tempo, time signature, track count, playback and recording
     state, and total song length.
     """
-    connection = _get_connection(ctx)
-    request = CommandRequest(command="session.get_info")
-    response = await connection.send_command(request)
-    response.raise_on_error()
-    return SessionInfo.model_validate(response.result)
+    result = await _send_session_command(ctx, "session.get_info")
+    return SessionInfo.model_validate(result)
 
 
 @mcp.tool()
@@ -86,14 +117,12 @@ async def set_tempo(
     tempo: float = Field(description="Tempo in BPM (20–999)", ge=20.0, le=999.0),
 ) -> TempoResult:
     """Set the song tempo. Tempo must be between 20 and 999 BPM."""
-    connection = _get_connection(ctx)
-    request = CommandRequest(
-        command="session.set_tempo",
-        params={"tempo": tempo},
+    result = await _send_session_command(
+        ctx,
+        "session.set_tempo",
+        {"tempo": tempo},
     )
-    response = await connection.send_command(request)
-    response.raise_on_error()
-    return TempoResult.model_validate(response.result)
+    return TempoResult.model_validate(result)
 
 
 @mcp.tool()
@@ -108,34 +137,82 @@ async def set_time_signature(
 
     Denominator must be a power of 2 (1, 2, 4, 8, 16, or 32).
     """
-    connection = _get_connection(ctx)
-    request = CommandRequest(
-        command="session.set_time_signature",
-        params={"numerator": numerator, "denominator": denominator},
+    result = await _send_session_command(
+        ctx,
+        "session.set_time_signature",
+        {"numerator": numerator, "denominator": denominator},
     )
-    response = await connection.send_command(request)
-    response.raise_on_error()
-    return TimeSignatureResult.model_validate(response.result)
+    return TimeSignatureResult.model_validate(result)
 
 
 @mcp.tool()
 async def start_playback(ctx: Context) -> TransportResult:
     """Start transport playback in Ableton Live."""
-    connection = _get_connection(ctx)
-    request = CommandRequest(command="session.start_playback")
-    response = await connection.send_command(request)
-    response.raise_on_error()
-    return TransportResult.model_validate(response.result)
+    result = await _send_session_command(ctx, "session.start_playback")
+    return TransportResult.model_validate(result)
 
 
 @mcp.tool()
 async def stop_playback(ctx: Context) -> TransportResult:
     """Stop transport playback in Ableton Live."""
-    connection = _get_connection(ctx)
-    request = CommandRequest(command="session.stop_playback")
-    response = await connection.send_command(request)
-    response.raise_on_error()
-    return TransportResult.model_validate(response.result)
+    result = await _send_session_command(ctx, "session.stop_playback")
+    return TransportResult.model_validate(result)
+
+
+@mcp.tool()
+async def start_recording(ctx: Context) -> RecordingResult:
+    """Start arrangement recording in Ableton Live."""
+    result = await _send_session_command(ctx, "session.start_recording")
+    return RecordingResult.model_validate(result)
+
+
+@mcp.tool()
+async def stop_recording(ctx: Context) -> RecordingResult:
+    """Stop arrangement recording in Ableton Live."""
+    result = await _send_session_command(ctx, "session.stop_recording")
+    return RecordingResult.model_validate(result)
+
+
+@mcp.tool()
+async def capture_midi(
+    ctx: Context,
+    destination: Annotated[
+        Literal["auto", "session", "arrangement"],
+        Field(
+            description=(
+                "Capture destination: auto chooses Live's default behavior, "
+                "session targets Session View, arrangement targets Arrangement View."
+            ),
+        ),
+    ] = "auto",
+) -> MidiCaptureResult:
+    """Capture recently played MIDI into Ableton Live."""
+    result = await _send_session_command(
+        ctx,
+        "session.capture_midi",
+        {"destination": destination},
+    )
+    return MidiCaptureResult.model_validate(result)
+
+
+@mcp.tool()
+async def set_overdub(
+    ctx: Context,
+    overdub: Annotated[
+        bool,
+        Field(
+            description="Whether overdub is enabled for arrangement MIDI recording.",
+            strict=True,
+        ),
+    ],
+) -> OverdubResult:
+    """Set the song overdub state."""
+    result = await _send_session_command(
+        ctx,
+        "session.set_overdub",
+        {"overdub": overdub},
+    )
+    return OverdubResult.model_validate(result)
 
 
 @mcp.tool()
@@ -145,23 +222,27 @@ async def get_playback_position(ctx: Context) -> PlaybackPosition:
     Returns the position in beats, bar number, beat within the current
     bar, elapsed time in seconds, and whether playback is active.
     """
-    connection = _get_connection(ctx)
-    request = CommandRequest(command="session.get_playback_position")
-    response = await connection.send_command(request)
-    response.raise_on_error()
-    return PlaybackPosition.model_validate(response.result)
+    result = await _send_session_command(ctx, "session.get_playback_position")
+    return PlaybackPosition.model_validate(result)
 
 
 __all__ = [
+    "MidiCaptureResult",
+    "OverdubResult",
     "PlaybackPosition",
+    "RecordingResult",
     "SessionInfo",
     "TempoResult",
     "TimeSignatureResult",
     "TransportResult",
+    "capture_midi",
     "get_playback_position",
     "get_session_info",
+    "set_overdub",
     "set_tempo",
     "set_time_signature",
+    "start_recording",
     "start_playback",
+    "stop_recording",
     "stop_playback",
 ]

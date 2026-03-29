@@ -23,6 +23,8 @@ class _FakeSong:
         signature_denominator: int = 4,
         is_playing: bool = False,
         record_mode: bool = False,
+        overdub: bool = False,
+        can_capture_midi: bool = True,
         song_length: float = 64.0,
         current_song_time: float = 0.0,
     ):
@@ -31,12 +33,25 @@ class _FakeSong:
         self.signature_denominator = signature_denominator
         self.is_playing = is_playing
         self.record_mode = record_mode
+        self.overdub = overdub
+        self.can_capture_midi = can_capture_midi
         self.song_length = song_length
         self.current_song_time = current_song_time
         self.tracks = [MagicMock() for _ in range(3)]
+        self.captured_midi_destinations: list[int] = []
 
-        self.start_playing = MagicMock()
-        self.stop_playing = MagicMock()
+        self.start_playing = MagicMock(side_effect=self._start_playing)
+        self.stop_playing = MagicMock(side_effect=self._stop_playing)
+        self.capture_midi = MagicMock(side_effect=self._capture_midi)
+
+    def _start_playing(self) -> None:
+        self.is_playing = True
+
+    def _stop_playing(self) -> None:
+        self.is_playing = False
+
+    def _capture_midi(self, destination: int) -> None:
+        self.captured_midi_destinations.append(destination)
 
 
 class _FakeControlSurface:
@@ -225,6 +240,113 @@ class TestStopPlayback:
 
 
 # ===================================================================
+# handle_start_recording / handle_stop_recording / handle_set_overdub
+# ===================================================================
+class TestStartRecording:
+    def test_starts_recording_when_playback_must_start(
+        self, handler: SessionHandler, song: _FakeSong
+    ) -> None:
+        result = handler.handle_start_recording({})
+
+        assert result["action"] == "start_recording"
+        assert result["is_recording"] is True
+        assert result["is_playing"] is True
+        assert song.record_mode is True
+        song.start_playing.assert_called_once()
+
+    def test_starts_recording_when_already_playing(self) -> None:
+        song = _FakeSong(is_playing=True, record_mode=False)
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        result = handler.handle_start_recording({})
+
+        assert result["action"] == "start_recording"
+        assert result["is_recording"] is True
+        assert result["is_playing"] is True
+        song.start_playing.assert_not_called()
+
+
+class TestStopRecording:
+    def test_stops_recording_without_stopping_transport(self) -> None:
+        song = _FakeSong(is_playing=True, record_mode=True)
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        result = handler.handle_stop_recording({})
+
+        assert result["action"] == "stop_recording"
+        assert result["is_recording"] is False
+        assert result["is_playing"] is True
+        assert song.record_mode is False
+        song.stop_playing.assert_not_called()
+
+
+class TestSetOverdub:
+    def test_sets_overdub(self, handler: SessionHandler, song: _FakeSong) -> None:
+        result = handler.handle_set_overdub({"overdub": True})
+
+        assert result["overdub"] is True
+        assert song.overdub is True
+
+    def test_rejects_missing_param(self, handler: SessionHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="required"):
+            handler.handle_set_overdub({})
+
+    def test_rejects_non_boolean(self, handler: SessionHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="boolean"):
+            handler.handle_set_overdub({"overdub": "yes"})
+
+
+class TestCaptureMidi:
+    @pytest.mark.parametrize(
+        ("destination", "expected_destination"),
+        [
+            ("auto", 0),
+            ("session", 1),
+            ("arrangement", 2),
+        ],
+    )
+    def test_captures_midi_for_supported_destinations(
+        self,
+        destination: str,
+        expected_destination: int,
+    ) -> None:
+        song = _FakeSong(can_capture_midi=True)
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        result = handler.handle_capture_midi({"destination": destination})
+
+        assert result == {"destination": destination, "captured": True}
+        song.capture_midi.assert_called_once_with(expected_destination)
+        assert song.captured_midi_destinations == [expected_destination]
+
+    def test_defaults_to_auto_destination(self) -> None:
+        song = _FakeSong(can_capture_midi=True)
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        result = handler.handle_capture_midi({})
+
+        assert result == {"destination": "auto", "captured": True}
+        song.capture_midi.assert_called_once_with(0)
+
+    def test_rejects_invalid_destination(self, handler: SessionHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="must be one of"):
+            handler.handle_capture_midi({"destination": "clip"})
+
+    def test_rejects_non_string_destination(self, handler: SessionHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="must be a string"):
+            handler.handle_capture_midi({"destination": 1})
+
+    def test_rejects_when_no_midi_available(self) -> None:
+        song = _FakeSong(can_capture_midi=False)
+        handler = SessionHandler(_FakeControlSurface(song))
+
+        with pytest.raises(InvalidParamsError, match="No MIDI available to capture"):
+            handler.handle_capture_midi({"destination": "auto"})
+
+        song.capture_midi.assert_not_called()
+
+
+# ===================================================================
 # handle_get_playback_position
 # ===================================================================
 class TestGetPlaybackPosition:
@@ -291,6 +413,22 @@ class TestInvalidParamsErrorRouting:
         assert resp["status"] == "error"
         assert resp["error"]["code"] == "INVALID_PARAMS"
         assert "between 20 and 999" in resp["error"]["message"]
+
+    def test_dispatcher_routes_capture_midi_invalid_params(self) -> None:
+        song = _FakeSong(can_capture_midi=False)
+        cs = _FakeControlSurface(song)
+        dispatcher = Dispatcher(cs)
+        dispatcher.register("session", SessionHandler(cs))
+
+        resp = dispatcher.dispatch(
+            "session.capture_midi",
+            {"destination": "auto"},
+            "cap-1",
+        )
+
+        assert resp["status"] == "error"
+        assert resp["error"]["code"] == "INVALID_PARAMS"
+        assert "No MIDI available to capture" in resp["error"]["message"]
 
     def test_dispatcher_routes_internal_error(self, song: _FakeSong) -> None:
         cs = _FakeControlSurface(song)

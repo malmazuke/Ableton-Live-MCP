@@ -19,17 +19,24 @@ from pydantic import ValidationError
 from mcp_ableton._app import mcp
 from mcp_ableton.protocol import CommandError, CommandResponse, ErrorDetail
 from mcp_ableton.tools.session import (
+    MidiCaptureResult,
+    OverdubResult,
     PlaybackPosition,
+    RecordingResult,
     SessionInfo,
     TempoResult,
     TimeSignatureResult,
     TransportResult,
+    capture_midi,
     get_playback_position,
     get_session_info,
+    set_overdub,
     set_tempo,
     set_time_signature,
     start_playback,
+    start_recording,
     stop_playback,
+    stop_recording,
 )
 
 # ---------------------------------------------------------------------------
@@ -41,6 +48,10 @@ TOOL_NAMES = [
     "set_time_signature",
     "start_playback",
     "stop_playback",
+    "start_recording",
+    "stop_recording",
+    "capture_midi",
+    "set_overdub",
     "get_playback_position",
 ]
 
@@ -117,6 +128,28 @@ class TestToolContracts:
         required = tool.parameters.get("required", [])
         assert required == []
 
+    def test_start_recording_has_no_required_params(self) -> None:
+        tool = self._get_tool("start_recording")
+        required = tool.parameters.get("required", [])
+        assert required == []
+
+    def test_stop_recording_has_no_required_params(self) -> None:
+        tool = self._get_tool("stop_recording")
+        required = tool.parameters.get("required", [])
+        assert required == []
+
+    def test_capture_midi_schema(self) -> None:
+        tool = self._get_tool("capture_midi")
+        props = tool.parameters["properties"]
+        assert props["destination"]["enum"] == ["auto", "session", "arrangement"]
+        assert props["destination"]["default"] == "auto"
+
+    def test_set_overdub_schema(self) -> None:
+        tool = self._get_tool("set_overdub")
+        props = tool.parameters["properties"]
+        assert props["overdub"]["type"] == "boolean"
+        assert tool.parameters["required"] == ["overdub"]
+
 
 # ===================================================================
 # 2. Input validation tests (schema-level, via arg_model)
@@ -162,6 +195,40 @@ class TestInputValidation:
         args = model(numerator=numerator, denominator=denominator)
         assert args.numerator == numerator
         assert args.denominator == denominator
+
+    @pytest.mark.parametrize("destination", ["clip", "AUTO", "", "foo"])
+    def test_capture_midi_rejects_invalid_destination(self, destination: str) -> None:
+        model = self._arg_model("capture_midi")
+        with pytest.raises(ValidationError):
+            model(destination=destination)
+
+    @pytest.mark.parametrize("destination", ["auto", "session", "arrangement"])
+    def test_capture_midi_accepts_valid_destinations(self, destination: str) -> None:
+        model = self._arg_model("capture_midi")
+        args = model(destination=destination)
+        assert args.destination == destination
+
+    def test_capture_midi_uses_auto_default(self) -> None:
+        model = self._arg_model("capture_midi")
+        args = model()
+        assert args.destination == "auto"
+
+    def test_set_overdub_requires_boolean(self) -> None:
+        model = self._arg_model("set_overdub")
+        with pytest.raises(ValidationError):
+            model()
+
+    @pytest.mark.parametrize("overdub", ["true", 1, 0, None])
+    def test_set_overdub_rejects_non_bool(self, overdub: object) -> None:
+        model = self._arg_model("set_overdub")
+        with pytest.raises(ValidationError):
+            model(overdub=overdub)
+
+    @pytest.mark.parametrize("overdub", [True, False])
+    def test_set_overdub_accepts_bool(self, overdub: bool) -> None:
+        model = self._arg_model("set_overdub")
+        args = model(overdub=overdub)
+        assert args.overdub is overdub
 
 
 # ===================================================================
@@ -382,6 +449,161 @@ class TestGetPlaybackPosition:
             await get_playback_position(ctx=mock_context)
 
 
+class TestStartRecording:
+    async def test_returns_recording_result(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            {
+                "action": "start_recording",
+                "is_recording": True,
+                "is_playing": True,
+            }
+        )
+
+        result = await start_recording(ctx=mock_context)
+
+        assert isinstance(result, RecordingResult)
+        assert result.action == "start_recording"
+        assert result.is_recording is True
+        assert result.is_playing is True
+
+    async def test_sends_correct_command(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            {
+                "action": "start_recording",
+                "is_recording": True,
+                "is_playing": True,
+            }
+        )
+
+        await start_recording(ctx=mock_context)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "session.start_recording"
+        assert req.params == {}
+
+    async def test_raises_on_error_response(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response()
+
+        with pytest.raises(CommandError):
+            await start_recording(ctx=mock_context)
+
+
+class TestStopRecording:
+    async def test_returns_recording_result(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            {
+                "action": "stop_recording",
+                "is_recording": False,
+                "is_playing": True,
+            }
+        )
+
+        result = await stop_recording(ctx=mock_context)
+
+        assert isinstance(result, RecordingResult)
+        assert result.action == "stop_recording"
+        assert result.is_recording is False
+        assert result.is_playing is True
+
+    async def test_sends_correct_command(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            {
+                "action": "stop_recording",
+                "is_recording": False,
+                "is_playing": True,
+            }
+        )
+
+        await stop_recording(ctx=mock_context)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "session.stop_recording"
+        assert req.params == {}
+
+
+class TestCaptureMidi:
+    async def test_returns_capture_result(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            {"destination": "session", "captured": True}
+        )
+
+        result = await capture_midi(ctx=mock_context, destination="session")
+
+        assert isinstance(result, MidiCaptureResult)
+        assert result.destination == "session"
+        assert result.captured is True
+
+    async def test_sends_default_destination(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            {"destination": "auto", "captured": True}
+        )
+
+        await capture_midi(ctx=mock_context)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "session.capture_midi"
+        assert req.params == {"destination": "auto"}
+
+    async def test_raises_invalid_params_on_remote_error(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="No MIDI available to capture",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await capture_midi(ctx=mock_context, destination="arrangement")
+
+
+class TestSetOverdub:
+    async def test_returns_overdub_result(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response({"overdub": True})
+
+        result = await set_overdub(ctx=mock_context, overdub=True)
+
+        assert isinstance(result, OverdubResult)
+        assert result.overdub is True
+
+    async def test_sends_correct_command_and_params(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response({"overdub": False})
+
+        await set_overdub(ctx=mock_context, overdub=False)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "session.set_overdub"
+        assert req.params == {"overdub": False}
+
+    async def test_raises_on_error_response(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="'overdub' must be a boolean",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await set_overdub(ctx=mock_context, overdub=True)
+
+
 # ===================================================================
 # 4. Response model validation
 # ===================================================================
@@ -395,6 +617,18 @@ class TestResponseModels:
     def test_tempo_result_rejects_missing_tempo(self) -> None:
         with pytest.raises(ValidationError):
             TempoResult.model_validate({})
+
+    def test_recording_result_rejects_missing_fields(self) -> None:
+        with pytest.raises(ValidationError):
+            RecordingResult.model_validate({"action": "start_recording"})
+
+    def test_capture_result_rejects_missing_fields(self) -> None:
+        with pytest.raises(ValidationError):
+            MidiCaptureResult.model_validate({"destination": "auto"})
+
+    def test_overdub_result_rejects_missing_overdub(self) -> None:
+        with pytest.raises(ValidationError):
+            OverdubResult.model_validate({})
 
     def test_playback_position_accepts_valid_data(self) -> None:
         pos = PlaybackPosition.model_validate(
