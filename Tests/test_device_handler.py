@@ -164,6 +164,16 @@ class _Browser:
                 )
             ],
         )
+        self.drums = _BrowserItem(
+            "Drums",
+            uri="browser:drums",
+            children=[],
+        )
+        self.sounds = _BrowserItem(
+            "Sounds",
+            uri="browser:sounds",
+            children=[],
+        )
 
     def load_item(self, item: _BrowserItem) -> None:
         selected_track = self._song.view.selected_track

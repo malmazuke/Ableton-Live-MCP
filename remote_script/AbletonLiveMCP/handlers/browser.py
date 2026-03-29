@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import queue
 from typing import Any
 
 from ..dispatcher import InvalidParamsError, NotFoundError
-from .base import BaseHandler
+from .base import MAIN_THREAD_TIMEOUT, BaseHandler
 
 BROWSER_TREE_DEPTH = 2
 SUPPORTED_BROWSER_CATEGORIES = (
@@ -179,27 +180,39 @@ class BrowserHandler(BaseHandler):
             str(getattr(device, "class_name", "")),
         )
 
-    def _infer_loaded_device(
+    def _detect_device_change(
         self,
         before_devices: list[Any],
+        before_signatures: list[tuple[str, str]],
         after_devices: list[Any],
-    ) -> Any:
-        """Infer which device was inserted from before/after device sequences."""
-        if len(after_devices) <= len(before_devices):
-            raise RuntimeError("Browser load completed but no new device appeared")
+    ) -> Any | None:
+        """Detect the loaded device by comparing before/after device lists.
 
-        before_signatures = [
-            self._device_signature(device) for device in before_devices
-        ]
-        after_signatures = [self._device_signature(device) for device in after_devices]
+        Handles both insertion (device count increased) and replacement
+        (device count stayed the same but a signature changed).
+        Returns ``None`` if no change is detected yet.
+        """
+        after_signatures = [self._device_signature(d) for d in after_devices]
 
-        if len(after_devices) == len(before_devices) + 1:
-            for index in range(len(after_devices) - 1, -1, -1):
-                candidate = after_signatures[:index] + after_signatures[index + 1 :]
-                if candidate == before_signatures:
-                    return after_devices[index]
+        if len(after_devices) > len(before_devices):
+            if len(after_devices) == len(before_devices) + 1:
+                for idx in range(len(after_devices) - 1, -1, -1):
+                    candidate = after_signatures[:idx] + after_signatures[idx + 1 :]
+                    if candidate == before_signatures:
+                        return after_devices[idx]
+            return after_devices[-1]
 
-        return after_devices[-1]
+        if (
+            len(after_devices) == len(before_devices)
+            and after_signatures != before_signatures
+        ):
+            for idx, (before_sig, after_sig) in enumerate(
+                zip(before_signatures, after_signatures, strict=True)
+            ):
+                if before_sig != after_sig:
+                    return after_devices[idx]
+
+        return None
 
     def _resolve_path(self, browser: Any, path: str) -> tuple[Any, str]:
         """Resolve a slash-separated Browser path."""
@@ -312,41 +325,107 @@ class BrowserHandler(BaseHandler):
 
         return self._run_on_main_thread(_read)
 
+    def _load_browser_item_with_device_detection(
+        self,
+        *,
+        track_index: int,
+        uri: str,
+        browser_roots: list[str],
+        validate_midi: bool = False,
+        max_retries: int = 20,
+    ) -> dict[str, Any]:
+        """Load a browser item onto a track, retrying device detection.
+
+        ``browser.load_item`` can be asynchronous — the device may not
+        appear in ``track.devices`` until a subsequent main-thread tick.
+        This method schedules retry checks via ``schedule_message`` to
+        handle that race condition.
+        """
+        result_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+
+        def _do_load() -> None:
+            try:
+                browser = self._browser()
+                track = self._resolve_track(track_index)
+
+                if validate_midi and not bool(getattr(track, "has_midi_input", False)):
+                    raise InvalidParamsError(
+                        f"Track {track_index} must be a MIDI track"
+                        " to load an instrument"
+                    )
+
+                roots = [getattr(browser, root) for root in browser_roots]
+                item = self._find_item_in_roots(roots, uri)
+                if item is None:
+                    raise NotFoundError(f"Browser item not found for URI: {uri}")
+                if not bool(getattr(item, "is_loadable", False)):
+                    raise InvalidParamsError(f"Browser item is not loadable: {uri}")
+
+                before_devices = list(track.devices)
+                before_sigs = [self._device_signature(d) for d in before_devices]
+                self._song.view.selected_track = track
+                browser.load_item(item)
+
+                remaining = [max_retries]
+
+                def _check_device() -> None:
+                    try:
+                        after_devices = list(track.devices)
+                        loaded = self._detect_device_change(
+                            before_devices,
+                            before_sigs,
+                            after_devices,
+                        )
+                        if loaded is not None:
+                            result_queue.put(
+                                (
+                                    "ok",
+                                    {
+                                        "track_index": track_index,
+                                        "device_index": (
+                                            after_devices.index(loaded) + 1
+                                        ),
+                                        "name": str(getattr(loaded, "name", "")),
+                                        "uri": uri,
+                                    },
+                                )
+                            )
+                        elif remaining[0] > 0:
+                            remaining[0] -= 1
+                            self._control_surface.schedule_message(1, _check_device)
+                        else:
+                            result_queue.put(
+                                (
+                                    "error",
+                                    RuntimeError(
+                                        "Browser load timed out: no new device"
+                                        f" appeared on track {track_index}"
+                                    ),
+                                )
+                            )
+                    except Exception as exc:
+                        result_queue.put(("error", exc))
+
+                _check_device()
+            except Exception as exc:
+                result_queue.put(("error", exc))
+
+        self._control_surface.schedule_message(0, _do_load)
+        status, value = result_queue.get(timeout=MAIN_THREAD_TIMEOUT)
+        if status == "error":
+            raise value
+        return value
+
     def handle_load_instrument(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Load an instrument onto a MIDI track from the instruments Browser root."""
+        """Load an instrument onto a MIDI track from the Browser."""
         track_index = self._require_track_index(params)
         uri = self._require_non_empty_string(params.get("uri"), "uri")
-
-        def _load() -> dict[str, Any]:
-            browser = self._browser()
-            track = self._resolve_track(track_index)
-            if not bool(getattr(track, "has_midi_input", False)):
-                raise InvalidParamsError(
-                    f"Track {track_index} must be a MIDI track to load an instrument"
-                )
-
-            item = self._find_item_in_roots([browser.instruments], uri)
-            if item is None:
-                raise NotFoundError(f"Browser item not found for URI: {uri}")
-            if not bool(getattr(item, "is_loadable", False)):
-                raise InvalidParamsError(f"Browser item is not loadable: {uri}")
-
-            before_devices = list(track.devices)
-            self._song.view.selected_track = track
-            browser.load_item(item)
-            after_devices = list(track.devices)
-            try:
-                loaded_device = self._infer_loaded_device(before_devices, after_devices)
-            except RuntimeError as exc:
-                raise RuntimeError(f"{exc} on track {track_index}") from exc
-            return {
-                "track_index": track_index,
-                "device_index": after_devices.index(loaded_device) + 1,
-                "name": str(getattr(loaded_device, "name", "")),
-                "uri": uri,
-            }
-
-        return self._run_on_main_thread(_load)
+        return self._load_browser_item_with_device_detection(
+            track_index=track_index,
+            uri=uri,
+            browser_roots=["instruments", "drums", "sounds"],
+            validate_midi=True,
+        )
 
     def handle_load_effect(self, params: dict[str, Any]) -> dict[str, Any]:
         """Load an effect onto a track from the audio/midi effect Browser roots."""
@@ -360,35 +439,11 @@ class BrowserHandler(BaseHandler):
                 "Arbitrary effect insertion is unsupported on the Live 12.2.5 "
                 "runtime; use position=-1"
             )
-
-        def _load() -> dict[str, Any]:
-            browser = self._browser()
-            track = self._resolve_track(track_index)
-            item = self._find_item_in_roots(
-                [browser.audio_effects, browser.midi_effects],
-                uri,
-            )
-            if item is None:
-                raise NotFoundError(f"Browser item not found for URI: {uri}")
-            if not bool(getattr(item, "is_loadable", False)):
-                raise InvalidParamsError(f"Browser item is not loadable: {uri}")
-
-            before_devices = list(track.devices)
-            self._song.view.selected_track = track
-            browser.load_item(item)
-            after_devices = list(track.devices)
-            try:
-                loaded_device = self._infer_loaded_device(before_devices, after_devices)
-            except RuntimeError as exc:
-                raise RuntimeError(f"{exc} on track {track_index}") from exc
-            return {
-                "track_index": track_index,
-                "device_index": after_devices.index(loaded_device) + 1,
-                "name": str(getattr(loaded_device, "name", "")),
-                "uri": uri,
-            }
-
-        return self._run_on_main_thread(_load)
+        return self._load_browser_item_with_device_detection(
+            track_index=track_index,
+            uri=uri,
+            browser_roots=["audio_effects", "midi_effects"],
+        )
 
 
 __all__ = ["BrowserHandler"]
