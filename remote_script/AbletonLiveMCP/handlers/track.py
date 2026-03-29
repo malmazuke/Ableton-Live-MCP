@@ -34,6 +34,119 @@ class TrackHandler(BaseHandler):
         lo = raw - 1
         return tracks[lo], raw, lo
 
+    def _require_non_empty_string(self, params: dict[str, Any], name: str) -> str:
+        """Return a required non-empty string parameter."""
+        value = params.get(name)
+        if not isinstance(value, str) or not value.strip():
+            raise InvalidParamsError(f"'{name}' must be a non-empty string")
+        return value
+
+    def _routing_label(self, attribute_name: str) -> str:
+        """Return a human-readable label for a routing attribute."""
+        return attribute_name.replace("_", " ")
+
+    def _routing_value(self, option: Any, field_name: str) -> str:
+        """Read a routing field from either an object or mapping-like value."""
+        if hasattr(option, field_name):
+            value = getattr(option, field_name)
+            if isinstance(value, (str, int)):
+                return str(value)
+
+        try:
+            value = option[field_name]
+        except (KeyError, TypeError, IndexError):
+            value = None
+
+        if isinstance(value, (str, int)):
+            return str(value)
+
+        if field_name == "identifier":
+            return str(hash(option))
+
+        raise InvalidParamsError(f"Routing option is missing '{field_name}'")
+
+    def _serialize_routing_option(self, option: Any) -> dict[str, str]:
+        """Normalize a routing option into the MCP response shape."""
+        return {
+            "identifier": self._routing_value(option, "identifier"),
+            "display_name": self._routing_value(option, "display_name"),
+        }
+
+    def _read_routing_selection(
+        self,
+        track: Any,
+        attribute_name: str,
+        track_index: int,
+    ) -> dict[str, str]:
+        """Read and normalize a selected routing value from a track."""
+        if not hasattr(track, attribute_name):
+            raise InvalidParamsError(
+                "Track "
+                f"{track_index} does not support "
+                f"{self._routing_label(attribute_name)}"
+            )
+
+        option = getattr(track, attribute_name)
+        if option is None:
+            raise InvalidParamsError(
+                "Track "
+                f"{track_index} does not support "
+                f"{self._routing_label(attribute_name)}"
+            )
+        return self._serialize_routing_option(option)
+
+    def _get_routing_collection(
+        self,
+        track: Any,
+        attribute_name: str,
+        track_index: int,
+    ) -> list[Any]:
+        """Read and validate an available routing collection from a track."""
+        if not hasattr(track, attribute_name):
+            raise InvalidParamsError(
+                "Track "
+                f"{track_index} does not support "
+                f"{self._routing_label(attribute_name)}"
+            )
+
+        collection = getattr(track, attribute_name)
+        if collection is None:
+            raise InvalidParamsError(
+                "Track "
+                f"{track_index} does not support "
+                f"{self._routing_label(attribute_name)}"
+            )
+
+        try:
+            options = list(collection)
+        except TypeError as exc:
+            raise InvalidParamsError(
+                "Track "
+                f"{track_index} does not support "
+                f"{self._routing_label(attribute_name)}"
+            ) from exc
+        if not options:
+            raise InvalidParamsError(
+                f"Track {track_index} has no {self._routing_label(attribute_name)}"
+            )
+        return options
+
+    def _find_routing_option(
+        self,
+        options: list[Any],
+        identifier: str,
+        option_label: str,
+        track_index: int,
+    ) -> Any:
+        """Resolve a routing option by its exact identifier."""
+        for option in options:
+            if self._routing_value(option, "identifier") == identifier:
+                return option
+
+        raise NotFoundError(
+            f"Track {track_index} has no {option_label} with identifier '{identifier}'"
+        )
+
     def handle_get_info(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return a structured snapshot of one track (read-only)."""
 
@@ -58,6 +171,156 @@ class TrackHandler(BaseHandler):
             }
 
         return self._run_on_main_thread(_read)
+
+    def handle_get_routing(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return the current routing selections for one track."""
+
+        def _read() -> dict[str, Any]:
+            track, track_index, _lo = self._resolve_track(params)
+            return {
+                "track_index": track_index,
+                "input_routing_type": self._read_routing_selection(
+                    track,
+                    "input_routing_type",
+                    track_index,
+                ),
+                "input_routing_channel": self._read_routing_selection(
+                    track,
+                    "input_routing_channel",
+                    track_index,
+                ),
+                "output_routing_type": self._read_routing_selection(
+                    track,
+                    "output_routing_type",
+                    track_index,
+                ),
+                "output_routing_channel": self._read_routing_selection(
+                    track,
+                    "output_routing_channel",
+                    track_index,
+                ),
+            }
+
+        return self._run_on_main_thread(_read)
+
+    def handle_get_available_routing(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return all available routing choices for one track."""
+
+        def _read() -> dict[str, Any]:
+            track, track_index, _lo = self._resolve_track(params)
+            return {
+                "track_index": track_index,
+                "available_input_routing_types": [
+                    self._serialize_routing_option(option)
+                    for option in self._get_routing_collection(
+                        track,
+                        "available_input_routing_types",
+                        track_index,
+                    )
+                ],
+                "available_input_routing_channels": [
+                    self._serialize_routing_option(option)
+                    for option in self._get_routing_collection(
+                        track,
+                        "available_input_routing_channels",
+                        track_index,
+                    )
+                ],
+                "available_output_routing_types": [
+                    self._serialize_routing_option(option)
+                    for option in self._get_routing_collection(
+                        track,
+                        "available_output_routing_types",
+                        track_index,
+                    )
+                ],
+                "available_output_routing_channels": [
+                    self._serialize_routing_option(option)
+                    for option in self._get_routing_collection(
+                        track,
+                        "available_output_routing_channels",
+                        track_index,
+                    )
+                ],
+            }
+
+        return self._run_on_main_thread(_read)
+
+    def handle_set_input_routing(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Set input routing by type/channel identifiers."""
+        return self._set_routing(params, direction="input")
+
+    def handle_set_output_routing(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Set output routing by type/channel identifiers."""
+        return self._set_routing(params, direction="output")
+
+    def _set_routing(self, params: dict[str, Any], *, direction: str) -> dict[str, Any]:
+        """Set a track routing direction using exact routing identifiers."""
+        routing_type_identifier = self._require_non_empty_string(
+            params,
+            "routing_type_identifier",
+        )
+        routing_channel_identifier = self._require_non_empty_string(
+            params,
+            "routing_channel_identifier",
+        )
+
+        type_property = f"{direction}_routing_type"
+        channel_property = f"{direction}_routing_channel"
+        type_collection_name = f"available_{direction}_routing_types"
+        channel_collection_name = f"available_{direction}_routing_channels"
+
+        def _set() -> dict[str, Any]:
+            track, track_index, _lo = self._resolve_track(params)
+
+            type_options = self._get_routing_collection(
+                track,
+                type_collection_name,
+                track_index,
+            )
+            target_type = self._find_routing_option(
+                type_options,
+                routing_type_identifier,
+                f"{direction} routing type",
+                track_index,
+            )
+
+            current_type_identifier = self._read_routing_selection(
+                track,
+                type_property,
+                track_index,
+            )["identifier"]
+            if current_type_identifier != routing_type_identifier:
+                setattr(track, type_property, target_type)
+
+            channel_options = self._get_routing_collection(
+                track,
+                channel_collection_name,
+                track_index,
+            )
+            target_channel = self._find_routing_option(
+                channel_options,
+                routing_channel_identifier,
+                f"{direction} routing channel",
+                track_index,
+            )
+            setattr(track, channel_property, target_channel)
+
+            return {
+                "track_index": track_index,
+                type_property: self._read_routing_selection(
+                    track,
+                    type_property,
+                    track_index,
+                ),
+                channel_property: self._read_routing_selection(
+                    track,
+                    channel_property,
+                    track_index,
+                ),
+            }
+
+        return self._run_on_main_thread(_set)
 
     def handle_create_midi(self, params: dict[str, Any]) -> dict[str, Any]:
         """Create a MIDI track; optional ``name`` applied on the main thread."""
