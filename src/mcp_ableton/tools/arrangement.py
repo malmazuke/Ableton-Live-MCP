@@ -6,7 +6,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.server.fastmcp import Context  # noqa: TCH002
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
 from mcp_ableton._app import mcp
 from mcp_ableton.protocol import CommandRequest
@@ -50,6 +50,39 @@ PositiveLength = Annotated[
         gt=0.0,
     ),
 ]
+LocatorIndex = Annotated[
+    int,
+    Field(
+        description="1-based index of the locator.",
+        ge=1,
+    ),
+]
+LocatorTime = Annotated[
+    float,
+    Field(
+        description="Arrangement beat time (must be >= 0).",
+        ge=0.0,
+    ),
+]
+
+
+LocatorName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1),
+    Field(description="New locator name."),
+]
+OptionalLocatorName = (
+    Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1),
+        Field(
+            description=(
+                "Optional locator name applied after creation (non-empty if set)."
+            )
+        ),
+    ]
+    | None
+)
 
 
 def _validate_absolute_local_file_path(value: str) -> str:
@@ -136,6 +169,50 @@ class ArrangementAudioImportResult(BaseModel):
     start_time: float
     length: float
     is_audio_clip: bool
+
+
+class LocatorInfo(BaseModel):
+    """Locator metadata returned by ``get_locators``."""
+
+    locator_index: int
+    name: str
+    time: float
+
+
+class LocatorsResult(BaseModel):
+    """All locators currently in the song."""
+
+    locators: list[LocatorInfo]
+
+
+class LocatorCreatedResult(BaseModel):
+    """Result of ``create_locator``."""
+
+    locator_index: int
+    name: str
+    time: float
+
+
+class LocatorDeletedResult(BaseModel):
+    """Result of ``delete_locator``."""
+
+    locator_index: int
+    name: str
+    time: float
+
+
+class LocatorRenamedResult(BaseModel):
+    """Result of ``set_locator_name``."""
+
+    locator_index: int
+    name: str
+    time: float
+
+
+class JumpToTimeResult(BaseModel):
+    """Result of ``jump_to_time``."""
+
+    time: float
 
 
 def _get_connection(ctx: Context) -> AbletonConnection:
@@ -286,6 +363,82 @@ async def import_audio_to_arrangement(
     response = await connection.send_command(request)
     response.raise_on_error()
     return ArrangementAudioImportResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def get_locators(ctx: Context) -> LocatorsResult:
+    """Get all locators in the arrangement."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(command="arrangement.get_locators")
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return LocatorsResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def create_locator(
+    ctx: Context,
+    time: LocatorTime,
+    name: OptionalLocatorName = None,
+) -> LocatorCreatedResult:
+    """Create a locator at a beat time."""
+    connection = _get_connection(ctx)
+    params: dict[str, Any] = {"time": time}
+    if name is not None:
+        params["name"] = name
+    request = CommandRequest(command="arrangement.create_locator", params=params)
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return LocatorCreatedResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def delete_locator(
+    ctx: Context,
+    locator_index: LocatorIndex,
+) -> LocatorDeletedResult:
+    """Delete a locator by 1-based index."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.delete_locator",
+        params={"locator_index": locator_index},
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return LocatorDeletedResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def set_locator_name(
+    ctx: Context,
+    locator_index: LocatorIndex,
+    name: LocatorName,
+) -> LocatorRenamedResult:
+    """Rename a locator."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.set_locator_name",
+        params={"locator_index": locator_index, "name": name},
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return LocatorRenamedResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def jump_to_time(
+    ctx: Context,
+    time: LocatorTime,
+) -> JumpToTimeResult:
+    """Jump the arrangement playhead to an absolute beat time."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.jump_to_time",
+        params={"time": time},
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return JumpToTimeResult.model_validate(response.result)
 
 
 class ArrangementClipNotesResult(BaseModel):
@@ -477,14 +630,28 @@ __all__ = [
     "ArrangementNotesRemovedResult",
     "ArrangementNotesSetResult",
     "AudioFilePath",
+    "JumpToTimeResult",
+    "LocatorCreatedResult",
+    "LocatorDeletedResult",
+    "LocatorInfo",
+    "LocatorName",
+    "LocatorRenamedResult",
+    "LocatorIndex",
+    "LocatorTime",
+    "LocatorsResult",
     "add_notes_to_arrangement_clip",
     "create_arrangement_clip",
+    "create_locator",
     "get_arrangement_clip_notes",
     "get_arrangement_clips",
     "get_arrangement_length",
+    "get_locators",
     "import_audio_to_arrangement",
+    "jump_to_time",
     "move_arrangement_clip",
     "remove_arrangement_clip_notes",
+    "delete_locator",
     "set_arrangement_clip_notes",
     "set_arrangement_loop",
+    "set_locator_name",
 ]

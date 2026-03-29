@@ -81,6 +81,12 @@ class _ArrangementClip:
         self.is_midi_clip = not audio
 
 
+class _CuePoint:
+    def __init__(self, name: str, time: float) -> None:
+        self.name = name
+        self.time = time
+
+
 class _ArrangementTrack(_Track):
     def __init__(
         self,
@@ -145,6 +151,7 @@ class _ArrangementSong:
         self.loop = False
         self.loop_start = 0.0
         self.loop_length = 4.0
+        self.current_song_time = 0.0
         self.tracks = [
             _ArrangementTrack(
                 "MIDI 1",
@@ -164,6 +171,25 @@ class _ArrangementSong:
             ),
             _ArrangementTrack("MIDI 2", midi=True, arrangement_clips=[]),
         ]
+        self.cue_points = [
+            _CuePoint("Intro", 0.0),
+            _CuePoint("Breakdown", 16.0),
+        ]
+
+    def _sort_cue_points(self) -> None:
+        self.cue_points.sort(key=lambda cue_point: (cue_point.time, cue_point.name))
+
+    def set_or_delete_cue(self) -> None:
+        for cue_point in list(self.cue_points):
+            if cue_point.time == self.current_song_time:
+                self.cue_points.remove(cue_point)
+                self._sort_cue_points()
+                return
+
+        self.cue_points.append(
+            _CuePoint(f"Locator {len(self.cue_points) + 1}", self.current_song_time)
+        )
+        self._sort_cue_points()
 
 
 class _LaggyLoopSong(_ArrangementSong):
@@ -474,6 +500,146 @@ class TestArrangementLengthAndLoop:
         assert laggy_song._loop_current is True
 
 
+class TestLocators:
+    def test_get_locators_serializes_shape(
+        self,
+        arrangement_handler: ArrangementHandler,
+    ) -> None:
+        result = arrangement_handler.handle_get_locators({})
+
+        assert result == {
+            "locators": [
+                {"locator_index": 1, "name": "Intro", "time": 0.0},
+                {"locator_index": 2, "name": "Breakdown", "time": 16.0},
+            ]
+        }
+
+    def test_create_locator_without_name_preserves_playhead(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        arrangement_song.current_song_time = 4.0
+
+        result = arrangement_handler.handle_create_locator({"time": 24.0})
+
+        assert result == {
+            "locator_index": 3,
+            "name": "Locator 3",
+            "time": 24.0,
+        }
+        assert arrangement_song.current_song_time == 4.0
+        assert [cue.name for cue in arrangement_song.cue_points] == [
+            "Intro",
+            "Breakdown",
+            "Locator 3",
+        ]
+
+    def test_create_locator_with_name_trims_input(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        arrangement_song.current_song_time = 12.0
+
+        result = arrangement_handler.handle_create_locator(
+            {"time": 12.0, "name": "  Drop  "}
+        )
+
+        assert result == {
+            "locator_index": 2,
+            "name": "Drop",
+            "time": 12.0,
+        }
+        assert arrangement_song.current_song_time == 12.0
+
+    def test_create_locator_rejects_duplicate_time(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        arrangement_song.current_song_time = 4.0
+
+        with pytest.raises(InvalidParamsError, match="already exists"):
+            arrangement_handler.handle_create_locator({"time": 16.0})
+
+        assert arrangement_song.current_song_time == 4.0
+
+    def test_delete_locator_preserves_playhead(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        arrangement_song.current_song_time = 4.0
+
+        result = arrangement_handler.handle_delete_locator({"locator_index": 2})
+
+        assert result == {
+            "locator_index": 2,
+            "name": "Breakdown",
+            "time": 16.0,
+        }
+        assert arrangement_song.current_song_time == 4.0
+        assert [cue.name for cue in arrangement_song.cue_points] == ["Intro"]
+
+    def test_set_locator_name(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        result = arrangement_handler.handle_set_locator_name(
+            {"locator_index": 1, "name": "  Verse  "}
+        )
+
+        assert result == {"locator_index": 1, "name": "Verse", "time": 0.0}
+        assert arrangement_song.cue_points[0].name == "Verse"
+
+    def test_jump_to_time_updates_playhead(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        arrangement_song.current_song_time = 2.0
+
+        result = arrangement_handler.handle_jump_to_time({"time": 32.0})
+
+        assert result == {"time": 32.0}
+        assert arrangement_song.current_song_time == 32.0
+
+    @pytest.mark.parametrize(
+        "params,match",
+        [
+            ({"locator_index": 0}, "at least 1"),
+            ({"locator_index": -1}, "at least 1"),
+            ({"time": -1.0}, "at least 0.0"),
+            ({"locator_index": 1, "name": "   "}, "non-empty string"),
+        ],
+    )
+    def test_invalid_params(
+        self,
+        arrangement_handler: ArrangementHandler,
+        params: dict[str, object],
+        match: str,
+    ) -> None:
+        if "time" in params:
+            with pytest.raises(InvalidParamsError, match=match):
+                arrangement_handler.handle_jump_to_time(params)
+            return
+        if "name" in params and "locator_index" in params:
+            with pytest.raises(InvalidParamsError, match=match):
+                arrangement_handler.handle_set_locator_name(params)
+            return
+        with pytest.raises(InvalidParamsError, match=match):
+            arrangement_handler.handle_delete_locator(params)
+
+    def test_missing_locator_raises_not_found(
+        self,
+        arrangement_handler: ArrangementHandler,
+    ) -> None:
+        with pytest.raises(NotFoundError, match="Locator 99"):
+            arrangement_handler.handle_delete_locator({"locator_index": 99})
+
+
 class TestDispatcherIntegration:
     def test_arrangement_get_length_via_dispatcher(
         self,
@@ -487,3 +653,16 @@ class TestDispatcherIntegration:
 
         assert response["status"] == "ok"
         assert response["result"] == {"song_length": 96.0}
+
+    def test_arrangement_get_locators_via_dispatcher(
+        self,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        control_surface = _FakeControlSurface(arrangement_song)
+        dispatcher = Dispatcher(control_surface)
+        dispatcher.register("arrangement", ArrangementHandler(control_surface))
+
+        response = dispatcher.dispatch("arrangement.get_locators", {}, "arr-2")
+
+        assert response["status"] == "ok"
+        assert response["result"]["locators"][0]["name"] == "Intro"

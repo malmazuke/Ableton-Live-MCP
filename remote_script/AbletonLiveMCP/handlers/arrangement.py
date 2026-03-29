@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import queue
 from collections import Counter
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from ..dispatcher import InvalidParamsError, NotFoundError
-from .base import BaseHandler
+from .base import MAIN_THREAD_TIMEOUT, BaseHandler
 from .note_mixin import NoteMixin
+
+T = TypeVar("T")
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class ArrangementHandler(NoteMixin, BaseHandler):
@@ -52,6 +58,16 @@ class ArrangementHandler(NoteMixin, BaseHandler):
             raise InvalidParamsError("'clip_index' must be at least 1")
         return raw
 
+    def _require_locator_index(self, params: dict[str, Any]) -> int:
+        raw = params.get("locator_index")
+        if raw is None:
+            raise InvalidParamsError("'locator_index' parameter is required")
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            raise InvalidParamsError("'locator_index' must be an integer")
+        if raw < 1:
+            raise InvalidParamsError("'locator_index' must be at least 1")
+        return raw
+
     def _require_arrangement_number(
         self,
         params: dict[str, Any],
@@ -74,6 +90,24 @@ class ArrangementHandler(NoteMixin, BaseHandler):
             if not exclusive_minimum and value < minimum:
                 raise InvalidParamsError(f"'{key}' must be at least {minimum}")
         return value
+
+    def _require_locator_name(
+        self,
+        params: dict[str, Any],
+        *,
+        required: bool = True,
+    ) -> str | None:
+        raw = params.get("name")
+        if raw is None:
+            if required:
+                raise InvalidParamsError("'name' parameter is required")
+            return None
+        if not isinstance(raw, str):
+            raise InvalidParamsError("'name' must be a string")
+        name = raw.strip()
+        if not name:
+            raise InvalidParamsError("'name' must be a non-empty string")
+        return name
 
     def _serialize_clip(
         self,
@@ -224,6 +258,88 @@ class ArrangementHandler(NoteMixin, BaseHandler):
 
         raise RuntimeError(
             f"Could not locate arrangement clip on track {track_index} after update"
+        )
+
+    def _serialize_cue_point(
+        self,
+        cue_point: Any,
+        *,
+        locator_index: int,
+    ) -> dict[str, Any]:
+        return {
+            "locator_index": locator_index,
+            "name": str(cue_point.name),
+            "time": float(cue_point.time),
+        }
+
+    def _get_cue_points(self) -> list[Any]:
+        return list(self._song.cue_points)
+
+    def _find_cue_points_at_time(self, time: float) -> list[Any]:
+        return [
+            cue_point
+            for cue_point in self._song.cue_points
+            if float(cue_point.time) == time
+        ]
+
+    def _resolve_locator(
+        self,
+        locator_index: int,
+    ) -> tuple[Any, int]:
+        cue_points = self._get_cue_points()
+        cue_count = len(cue_points)
+        if locator_index > cue_count:
+            raise NotFoundError(
+                "Locator "
+                f"{locator_index} does not exist (song has {cue_count} locator(s))"
+            )
+        return cue_points[locator_index - 1], locator_index
+
+    def _cue_point_index(self, cue_point: Any) -> int:
+        for locator_index, candidate in enumerate(self._song.cue_points, start=1):
+            if candidate is cue_point:
+                return locator_index
+        raise RuntimeError("Could not locate locator after creation")
+
+    def _locator_index_at_time(self, time: float) -> int:
+        for locator_index, cue_point in enumerate(self._song.cue_points, start=1):
+            if float(cue_point.time) == time:
+                return locator_index
+        raise RuntimeError(f"Could not locate locator at time {time}")
+
+    def _run_on_main_thread_after_settle(
+        self,
+        setup: Callable[[], Any],
+        action: Callable[[], T],
+    ) -> T:
+        """Run *setup* on one tick, then *action* on the next tick."""
+        result_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+
+        def _action_wrapper() -> None:
+            try:
+                result_queue.put(("ok", action()))
+            except Exception as exc:
+                result_queue.put(("error", exc))
+
+        def _setup_wrapper() -> None:
+            try:
+                setup()
+                self._control_surface.schedule_message(0, _action_wrapper)
+            except Exception as exc:
+                result_queue.put(("error", exc))
+
+        self._control_surface.schedule_message(0, _setup_wrapper)
+
+        status, value = result_queue.get(timeout=MAIN_THREAD_TIMEOUT)
+        if status == "error":
+            raise value
+        return value
+
+    def _set_current_song_time_and_wait(self, target_time: float) -> None:
+        """Move the playhead and wait for Live to settle the new time."""
+        self._run_on_main_thread_after_settle(
+            lambda: setattr(self._song, "current_song_time", target_time),
+            lambda: None,
         )
 
     def _validate_target_track(
@@ -443,6 +559,159 @@ class ArrangementHandler(NoteMixin, BaseHandler):
             }
 
         return self._run_on_main_thread(_set)
+
+    def handle_get_locators(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return all cue points in the song."""
+
+        def _read() -> dict[str, Any]:
+            locators = [
+                self._serialize_cue_point(cue_point, locator_index=locator_index)
+                for locator_index, cue_point in enumerate(
+                    self._song.cue_points, start=1
+                )
+            ]
+            return {"locators": locators}
+
+        return self._run_on_main_thread(_read)
+
+    def handle_create_locator(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Create a locator at the requested beat time."""
+        target_time = self._require_arrangement_number(params, "time", minimum=0.0)
+        name = self._require_locator_name(params, required=False)
+
+        original_time = self._run_on_main_thread(
+            lambda: float(self._song.current_song_time)
+        )
+        existing = self._run_on_main_thread(
+            lambda: self._find_cue_points_at_time(target_time)
+        )
+        if existing:
+            raise InvalidParamsError(f"A locator already exists at time {target_time}")
+
+        before_count = self._run_on_main_thread(lambda: len(self._song.cue_points))
+        try:
+            self._set_current_song_time_and_wait(target_time)
+
+            def _create() -> dict[str, Any]:
+                song = self._song
+                song.set_or_delete_cue()
+                after_count = len(song.cue_points)
+                if after_count != before_count + 1:
+                    raise RuntimeError(
+                        "Locator creation did not change cue-point count by +1"
+                    )
+
+                created_candidates = [
+                    cue_point
+                    for cue_point in song.cue_points
+                    if float(cue_point.time) == target_time
+                ]
+                if len(created_candidates) != 1:
+                    raise RuntimeError(
+                        "Could not uniquely identify locator at time "
+                        f"{target_time} after creation"
+                    )
+                created = created_candidates[0]
+                if name is not None:
+                    created.name = name
+                locator_index = self._locator_index_at_time(target_time)
+                return self._serialize_cue_point(
+                    created,
+                    locator_index=locator_index,
+                )
+
+            result = self._run_on_main_thread_after_settle(lambda: None, _create)
+            return result
+        finally:
+            self._set_current_song_time_and_wait(original_time)
+            self._run_on_main_thread_after_settle(
+                lambda: None,
+                lambda: None,
+            )
+
+    def handle_delete_locator(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Delete a locator by 1-based index."""
+        locator_index = self._require_locator_index(params)
+        original_time = self._run_on_main_thread(
+            lambda: float(self._song.current_song_time)
+        )
+        cue_point, resolved_locator_index = self._run_on_main_thread(
+            lambda: self._resolve_locator(locator_index)
+        )
+        cue_time = float(cue_point.time)
+        cue_name = str(cue_point.name)
+        try:
+            self._set_current_song_time_and_wait(cue_time)
+
+            def _delete() -> dict[str, Any]:
+                song = self._song
+                matched = [
+                    cue_point
+                    for cue_point in song.cue_points
+                    if float(cue_point.time) == cue_time
+                ]
+                if not matched:
+                    raise NotFoundError(
+                        "Locator "
+                        f"{resolved_locator_index} no longer exists at time {cue_time}"
+                    )
+
+                before_count = len(song.cue_points)
+                song.set_or_delete_cue()
+                after_count = len(song.cue_points)
+                if after_count != before_count - 1:
+                    raise RuntimeError(
+                        "Locator deletion did not change cue-point count by -1"
+                    )
+                remaining = [
+                    cue_point
+                    for cue_point in song.cue_points
+                    if float(cue_point.time) == cue_time
+                ]
+                if remaining:
+                    raise RuntimeError(
+                        f"Locator deletion left a cue point at time {cue_time}"
+                    )
+                return {
+                    "locator_index": resolved_locator_index,
+                    "name": cue_name,
+                    "time": cue_time,
+                }
+
+            result = self._run_on_main_thread_after_settle(lambda: None, _delete)
+            return result
+        finally:
+            self._set_current_song_time_and_wait(original_time)
+            self._run_on_main_thread_after_settle(
+                lambda: None,
+                lambda: None,
+            )
+
+    def handle_set_locator_name(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Rename a locator."""
+        locator_index = self._require_locator_index(params)
+        name = self._require_locator_name(params)
+        assert name is not None
+
+        def _rename() -> dict[str, Any]:
+            cue_point, resolved_locator_index = self._resolve_locator(locator_index)
+            cue_point.name = name
+            return self._serialize_cue_point(
+                cue_point,
+                locator_index=resolved_locator_index,
+            )
+
+        return self._run_on_main_thread(_rename)
+
+    def handle_jump_to_time(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Set the current arrangement playhead position."""
+        target_time = self._require_arrangement_number(params, "time", minimum=0.0)
+
+        def _jump() -> dict[str, Any]:
+            return {"time": float(self._song.current_song_time)}
+
+        self._set_current_song_time_and_wait(target_time)
+        return self._run_on_main_thread(_jump)
 
     # ------------------------------------------------------------------
     # Note editing handlers for arrangement clips

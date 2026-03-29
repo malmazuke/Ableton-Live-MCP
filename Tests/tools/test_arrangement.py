@@ -20,12 +20,23 @@ from mcp_ableton.tools.arrangement import (
     ArrangementClipsResult,
     ArrangementLengthResult,
     ArrangementLoopResult,
+    JumpToTimeResult,
+    LocatorCreatedResult,
+    LocatorDeletedResult,
+    LocatorInfo,
+    LocatorRenamedResult,
+    LocatorsResult,
     create_arrangement_clip,
+    create_locator,
+    delete_locator,
     get_arrangement_clips,
     get_arrangement_length,
+    get_locators,
     import_audio_to_arrangement,
+    jump_to_time,
     move_arrangement_clip,
     set_arrangement_loop,
+    set_locator_name,
 )
 
 TOOL_NAMES = [
@@ -35,6 +46,11 @@ TOOL_NAMES = [
     "get_arrangement_length",
     "set_arrangement_loop",
     "import_audio_to_arrangement",
+    "get_locators",
+    "create_locator",
+    "delete_locator",
+    "set_locator_name",
+    "jump_to_time",
 ]
 
 ARRANGEMENT_CLIPS_RESULT = {
@@ -72,6 +88,33 @@ ARRANGEMENT_AUDIO_IMPORT_RESULT = {
     "length": 8.5,
     "is_audio_clip": True,
 }
+
+LOCATORS_RESULT = {
+    "locators": [
+        {"locator_index": 1, "name": "Intro", "time": 0.0},
+        {"locator_index": 2, "name": "Breakdown", "time": 16.0},
+    ]
+}
+
+LOCATOR_CREATED_RESULT = {
+    "locator_index": 3,
+    "name": "MCP Locator",
+    "time": 24.0,
+}
+
+LOCATOR_DELETED_RESULT = {
+    "locator_index": 2,
+    "name": "Breakdown",
+    "time": 16.0,
+}
+
+LOCATOR_RENAMED_RESULT = {
+    "locator_index": 1,
+    "name": "MCP Renamed",
+    "time": 0.0,
+}
+
+JUMP_TO_TIME_RESULT = {"time": 16.0}
 
 
 def _ok_response(result: dict[str, Any], request_id: str = "test") -> CommandResponse:
@@ -141,6 +184,30 @@ class TestToolContracts:
         assert props["start_time"]["minimum"] == 0.0
         assert props["file_path"]["type"] == "string"
 
+    def test_get_locators_schema(self) -> None:
+        tool = self._get_tool("get_locators")
+        assert tool.parameters["properties"] == {}
+
+    def test_create_locator_schema_defaults(self) -> None:
+        tool = self._get_tool("create_locator")
+        props = tool.parameters["properties"]
+        assert props["time"]["minimum"] == 0.0
+        assert props["name"]["default"] is None
+
+    def test_delete_locator_schema(self) -> None:
+        tool = self._get_tool("delete_locator")
+        assert _schema_minimum(tool.parameters["properties"]["locator_index"]) == 1
+
+    def test_set_locator_name_schema(self) -> None:
+        tool = self._get_tool("set_locator_name")
+        props = tool.parameters["properties"]
+        assert _schema_minimum(props["locator_index"]) == 1
+        assert props["name"]["type"] == "string"
+
+    def test_jump_to_time_schema(self) -> None:
+        tool = self._get_tool("jump_to_time")
+        assert tool.parameters["properties"]["time"]["minimum"] == 0.0
+
 
 class TestInputValidation:
     def _arg_model(self, tool_name: str):
@@ -189,6 +256,27 @@ class TestInputValidation:
         model = self._arg_model("import_audio_to_arrangement")
         with pytest.raises(ValidationError):
             model(track_index=2, file_path="audio/vocal.wav", start_time=4.0)
+
+    def test_create_locator_accepts_omitted_name(self) -> None:
+        model = self._arg_model("create_locator")
+        args = model(time=8.0)
+        assert args.name is None
+
+    def test_create_locator_rejects_blank_name(self) -> None:
+        model = self._arg_model("create_locator")
+        with pytest.raises(ValidationError):
+            model(time=8.0, name="   ")
+
+    def test_set_locator_name_rejects_blank_name(self) -> None:
+        model = self._arg_model("set_locator_name")
+        with pytest.raises(ValidationError):
+            model(locator_index=1, name="   ")
+
+    @pytest.mark.parametrize("time", [-1.0, -0.5])
+    def test_jump_to_time_rejects_negative_time(self, time: float) -> None:
+        model = self._arg_model("jump_to_time")
+        with pytest.raises(ValidationError):
+            model(time=time)
 
 
 class TestGetArrangementClips:
@@ -253,6 +341,110 @@ class TestGetArrangementClips:
 
         with pytest.raises(CommandError, match="NOT_FOUND"):
             await get_arrangement_clips(ctx=mock_context, track_index=9)
+
+
+class TestLocators:
+    async def test_get_locators_returns_nested_result(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(LOCATORS_RESULT)
+
+        result = await get_locators(ctx=mock_context)
+
+        assert isinstance(result, LocatorsResult)
+        assert isinstance(result.locators[0], LocatorInfo)
+        assert result.locators[1].name == "Breakdown"
+
+    async def test_create_locator_sends_name_when_provided(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(LOCATOR_CREATED_RESULT)
+
+        result = await create_locator(
+            ctx=mock_context,
+            time=24.0,
+            name="MCP Locator",
+        )
+
+        assert isinstance(result, LocatorCreatedResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.create_locator"
+        assert req.params == {"time": 24.0, "name": "MCP Locator"}
+
+    async def test_create_locator_omits_name_when_missing(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(LOCATOR_CREATED_RESULT)
+
+        await create_locator(ctx=mock_context, time=24.0)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.params == {"time": 24.0}
+
+    async def test_delete_locator_sends_locator_index(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(LOCATOR_DELETED_RESULT)
+
+        result = await delete_locator(ctx=mock_context, locator_index=2)
+
+        assert isinstance(result, LocatorDeletedResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.delete_locator"
+        assert req.params == {"locator_index": 2}
+
+    async def test_set_locator_name_sends_trimmed_name(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(LOCATOR_RENAMED_RESULT)
+
+        result = await set_locator_name(
+            ctx=mock_context,
+            locator_index=1,
+            name="MCP Renamed",
+        )
+
+        assert isinstance(result, LocatorRenamedResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.set_locator_name"
+        assert req.params == {"locator_index": 1, "name": "MCP Renamed"}
+
+    async def test_jump_to_time_sends_command(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(JUMP_TO_TIME_RESULT)
+
+        result = await jump_to_time(ctx=mock_context, time=16.0)
+
+        assert isinstance(result, JumpToTimeResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.jump_to_time"
+        assert req.params == {"time": 16.0}
+
+    async def test_create_locator_raises_on_error(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="A locator already exists at time 16.0",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await create_locator(ctx=mock_context, time=16.0)
 
 
 class TestCreateArrangementClip:
@@ -468,3 +660,15 @@ class TestResponseModels:
             ARRANGEMENT_AUDIO_IMPORT_RESULT
         )
         assert result.is_audio_clip is True
+
+    def test_locator_models_accept_valid(self) -> None:
+        locators = LocatorsResult.model_validate(LOCATORS_RESULT)
+        assert locators.locators[0].locator_index == 1
+        assert LocatorCreatedResult.model_validate(LOCATOR_CREATED_RESULT).name == (
+            "MCP Locator"
+        )
+        assert LocatorDeletedResult.model_validate(LOCATOR_DELETED_RESULT).time == 16.0
+        assert LocatorRenamedResult.model_validate(LOCATOR_RENAMED_RESULT).name == (
+            "MCP Renamed"
+        )
+        assert JumpToTimeResult.model_validate(JUMP_TO_TIME_RESULT).time == 16.0
