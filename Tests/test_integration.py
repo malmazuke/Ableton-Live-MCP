@@ -58,6 +58,33 @@ class _BrowserHandler:
         }
 
 
+class _DeviceHandler:
+    def handle_get_parameters(self, params):
+        return {
+            "track_index": 1,
+            "device_index": 2,
+            "device_name": "Analog",
+            "parameters": [
+                {
+                    "parameter_index": 1,
+                    "name": "Device On",
+                    "value": 1.0,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "is_quantized": True,
+                },
+                {
+                    "parameter_index": 2,
+                    "name": "Filter Freq",
+                    "value": 5000.0,
+                    "min": 20.0,
+                    "max": 20000.0,
+                    "is_quantized": False,
+                },
+            ],
+        }
+
+
 @pytest.fixture
 def tcp_server():
     """Start a real TcpServer in a background thread on an OS-assigned port."""
@@ -65,6 +92,7 @@ def tcp_server():
     dispatcher = Dispatcher(cs)
     dispatcher.register("session", _EchoHandler())
     dispatcher.register("browser", _BrowserHandler())
+    dispatcher.register("device", _DeviceHandler())
 
     logs: list[str] = []
     server = TcpServer(
@@ -149,5 +177,22 @@ class TestFullRoundTrip:
         category = resp.result["categories"][0]
         assert category["name"] == "Instruments"
         assert category["children"][0]["children"][0]["name"] == "Analog"
+
+        await conn.disconnect()
+
+    async def test_device_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(command="device.get_parameters", id="device-1")
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "device-1"
+        assert resp.result is not None
+        assert resp.result["device_name"] == "Analog"
+        assert resp.result["parameters"][0]["parameter_index"] == 1
+        assert resp.result["parameters"][1]["name"] == "Filter Freq"
 
         await conn.disconnect()

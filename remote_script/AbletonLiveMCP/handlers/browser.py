@@ -68,6 +68,27 @@ class BrowserHandler(BaseHandler):
             raise InvalidParamsError(f"'{name}' must not be empty")
         return value
 
+    def _require_track_index(self, params: dict[str, Any]) -> int:
+        """Validate a 1-based track index parameter."""
+        raw_value = params.get("track_index")
+        if raw_value is None:
+            raise InvalidParamsError("'track_index' parameter is required")
+        if isinstance(raw_value, bool) or not isinstance(raw_value, int):
+            raise InvalidParamsError("'track_index' must be an integer")
+        if raw_value < 1:
+            raise InvalidParamsError("'track_index' must be at least 1")
+        return raw_value
+
+    def _resolve_track(self, track_index: int) -> Any:
+        """Resolve a 1-based track index."""
+        tracks = self._song.tracks
+        track_count = len(tracks)
+        if track_index > track_count:
+            raise NotFoundError(
+                f"Track {track_index} does not exist (song has {track_count} track(s))"
+            )
+        return tracks[track_index - 1]
+
     def _root_categories(
         self,
         browser: Any,
@@ -130,6 +151,55 @@ class BrowserHandler(BaseHandler):
         if uri is None:
             return None
         return str(uri)
+
+    def _find_item_by_uri(self, item: Any, uri: str) -> Any | None:
+        """Recursively search a Browser subtree for a matching URI."""
+        if self._item_uri(item) == uri:
+            return item
+
+        for child in self._children(item):
+            match = self._find_item_by_uri(child, uri)
+            if match is not None:
+                return match
+
+        return None
+
+    def _find_item_in_roots(self, roots: list[Any], uri: str) -> Any | None:
+        """Search multiple Browser roots for a matching URI."""
+        for root in roots:
+            match = self._find_item_by_uri(root, uri)
+            if match is not None:
+                return match
+        return None
+
+    def _device_signature(self, device: Any) -> tuple[str, str]:
+        """Return a stable-enough signature for Browser load diffing."""
+        return (
+            str(getattr(device, "name", "")),
+            str(getattr(device, "class_name", "")),
+        )
+
+    def _infer_loaded_device(
+        self,
+        before_devices: list[Any],
+        after_devices: list[Any],
+    ) -> Any:
+        """Infer which device was inserted from before/after device sequences."""
+        if len(after_devices) <= len(before_devices):
+            raise RuntimeError("Browser load completed but no new device appeared")
+
+        before_signatures = [
+            self._device_signature(device) for device in before_devices
+        ]
+        after_signatures = [self._device_signature(device) for device in after_devices]
+
+        if len(after_devices) == len(before_devices) + 1:
+            for index in range(len(after_devices) - 1, -1, -1):
+                candidate = after_signatures[:index] + after_signatures[index + 1 :]
+                if candidate == before_signatures:
+                    return after_devices[index]
+
+        return after_devices[-1]
 
     def _resolve_path(self, browser: Any, path: str) -> tuple[Any, str]:
         """Resolve a slash-separated Browser path."""
@@ -241,6 +311,84 @@ class BrowserHandler(BaseHandler):
             }
 
         return self._run_on_main_thread(_read)
+
+    def handle_load_instrument(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Load an instrument onto a MIDI track from the instruments Browser root."""
+        track_index = self._require_track_index(params)
+        uri = self._require_non_empty_string(params.get("uri"), "uri")
+
+        def _load() -> dict[str, Any]:
+            browser = self._browser()
+            track = self._resolve_track(track_index)
+            if not bool(getattr(track, "has_midi_input", False)):
+                raise InvalidParamsError(
+                    f"Track {track_index} must be a MIDI track to load an instrument"
+                )
+
+            item = self._find_item_in_roots([browser.instruments], uri)
+            if item is None:
+                raise NotFoundError(f"Browser item not found for URI: {uri}")
+            if not bool(getattr(item, "is_loadable", False)):
+                raise InvalidParamsError(f"Browser item is not loadable: {uri}")
+
+            before_devices = list(track.devices)
+            self._song.view.selected_track = track
+            browser.load_item(item)
+            after_devices = list(track.devices)
+            try:
+                loaded_device = self._infer_loaded_device(before_devices, after_devices)
+            except RuntimeError as exc:
+                raise RuntimeError(f"{exc} on track {track_index}") from exc
+            return {
+                "track_index": track_index,
+                "device_index": after_devices.index(loaded_device) + 1,
+                "name": str(getattr(loaded_device, "name", "")),
+                "uri": uri,
+            }
+
+        return self._run_on_main_thread(_load)
+
+    def handle_load_effect(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Load an effect onto a track from the audio/midi effect Browser roots."""
+        track_index = self._require_track_index(params)
+        uri = self._require_non_empty_string(params.get("uri"), "uri")
+        position = params.get("position", -1)
+        if isinstance(position, bool) or not isinstance(position, int):
+            raise InvalidParamsError("'position' must be an integer")
+        if position != -1:
+            raise InvalidParamsError(
+                "Arbitrary effect insertion is unsupported on the Live 12.2.5 "
+                "runtime; use position=-1"
+            )
+
+        def _load() -> dict[str, Any]:
+            browser = self._browser()
+            track = self._resolve_track(track_index)
+            item = self._find_item_in_roots(
+                [browser.audio_effects, browser.midi_effects],
+                uri,
+            )
+            if item is None:
+                raise NotFoundError(f"Browser item not found for URI: {uri}")
+            if not bool(getattr(item, "is_loadable", False)):
+                raise InvalidParamsError(f"Browser item is not loadable: {uri}")
+
+            before_devices = list(track.devices)
+            self._song.view.selected_track = track
+            browser.load_item(item)
+            after_devices = list(track.devices)
+            try:
+                loaded_device = self._infer_loaded_device(before_devices, after_devices)
+            except RuntimeError as exc:
+                raise RuntimeError(f"{exc} on track {track_index}") from exc
+            return {
+                "track_index": track_index,
+                "device_index": after_devices.index(loaded_device) + 1,
+                "name": str(getattr(loaded_device, "name", "")),
+                "uri": uri,
+            }
+
+        return self._run_on_main_thread(_load)
 
 
 __all__ = ["BrowserHandler"]
