@@ -497,6 +497,7 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `get_device_parameters` | `device.get_parameters` |
 | `set_device_parameter` | `device.set_parameter` |
 | `load_instrument` | `browser.load_instrument` |
+| `load_effect` | `browser.load_effect` |
 | `get_browser_tree` | `browser.get_tree` |
 | `get_browser_items` | `browser.get_items` |
 | `search_browser` | `browser.search` |
