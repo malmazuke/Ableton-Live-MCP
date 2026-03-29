@@ -15,7 +15,9 @@ SUPPORTED_BROWSER_CATEGORIES = (
     "drums",
     "audio_effects",
     "midi_effects",
+    "plugins",
 )
+PLUGIN_CATEGORY_ALIASES = {"plug_ins": "plugins"}
 
 
 class BrowserHandler(BaseHandler):
@@ -44,6 +46,7 @@ class BrowserHandler(BaseHandler):
         category = raw_value.strip().lower()
         if not category:
             raise InvalidParamsError("'category' must not be empty")
+        category = PLUGIN_CATEGORY_ALIASES.get(category, category)
         if category == "all":
             if allow_all:
                 return category
@@ -103,15 +106,22 @@ class BrowserHandler(BaseHandler):
             ]
         return [(category, self._root_item(browser, category))]
 
+    def _browser_root(self, browser: Any, category: str) -> Any:
+        """Return a raw top-level Browser root, honoring runtime aliases."""
+        if category == "plugins":
+            item = getattr(browser, "plugins", None)
+            if item is None:
+                item = getattr(browser, "plug_ins", None)
+        else:
+            item = getattr(browser, category, None)
+        if item is None:
+            raise NotFoundError(f"Browser category '{category}' is not available")
+        return item
+
     def _root_item(self, browser: Any, category: str) -> Any:
         """Return one top-level Browser category object."""
         normalized_category = self._normalize_category(category)
-        item = getattr(browser, normalized_category, None)
-        if item is None:
-            raise NotFoundError(
-                f"Browser category '{normalized_category}' is not available"
-            )
-        return item
+        return self._browser_root(browser, normalized_category)
 
     def _children(self, item: Any) -> list[Any]:
         """Return a materialized child list for a Browser item."""
@@ -354,7 +364,7 @@ class BrowserHandler(BaseHandler):
                         " to load an instrument"
                     )
 
-                roots = [getattr(browser, root) for root in browser_roots]
+                roots = [self._browser_root(browser, root) for root in browser_roots]
                 item = self._find_item_in_roots(roots, uri)
                 if item is None:
                     raise NotFoundError(f"Browser item not found for URI: {uri}")
@@ -423,7 +433,7 @@ class BrowserHandler(BaseHandler):
         return self._load_browser_item_with_device_detection(
             track_index=track_index,
             uri=uri,
-            browser_roots=["instruments", "drums", "sounds"],
+            browser_roots=["instruments", "drums", "sounds", "plugins"],
             validate_midi=True,
         )
 

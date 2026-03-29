@@ -174,6 +174,35 @@ class _Browser:
             uri="browser:sounds",
             children=[],
         )
+        self.plugins = _BrowserItem(
+            "Plugins",
+            uri="browser:plugins",
+            children=[
+                _BrowserItem(
+                    "Arturia",
+                    uri="browser:plugins/arturia",
+                    children=[
+                        _BrowserItem(
+                            "Analog Lab",
+                            uri="browser:plugins/arturia/analog-lab",
+                            is_loadable=True,
+                            device_factory=lambda: _Device(
+                                "Analog Lab",
+                                [
+                                    _Parameter(
+                                        "Device On",
+                                        1.0,
+                                        0.0,
+                                        1.0,
+                                        is_quantized=True,
+                                    )
+                                ],
+                            ),
+                        )
+                    ],
+                )
+            ],
+        )
 
     def load_item(self, item: _BrowserItem) -> None:
         selected_track = self._song.view.selected_track

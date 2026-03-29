@@ -52,7 +52,7 @@ class _FakeSong:
 
 
 class _Browser:
-    def __init__(self) -> None:
+    def __init__(self, plugin_root_name: str | None = "plugins") -> None:
         self.instruments = _BrowserItem(
             "Instruments",
             uri="browser:instruments",
@@ -127,6 +127,56 @@ class _Browser:
             uri="browser:midi-effects",
             children=[],
         )
+        if plugin_root_name == "plugins":
+            self.plugins = _BrowserItem(
+                "Plugins",
+                uri="browser:plugins",
+                children=[
+                    _BrowserItem(
+                        "Arturia",
+                        uri="browser:plugins/arturia",
+                        children=[
+                            _BrowserItem(
+                                "Mini V",
+                                uri="browser:plugins/arturia/mini-v",
+                                is_loadable=True,
+                            ),
+                            _BrowserItem(
+                                "Vendor Folder",
+                                uri="browser:plugins/arturia/vendor-folder",
+                                children=[
+                                    _BrowserItem(
+                                        "Mini V Deep",
+                                        uri=(
+                                            "browser:plugins/arturia/"
+                                            "vendor-folder/mini-v-deep"
+                                        ),
+                                        is_loadable=True,
+                                    )
+                                ],
+                            ),
+                        ],
+                    )
+                ],
+            )
+        elif plugin_root_name == "plug_ins":
+            self.plug_ins = _BrowserItem(
+                "Plugins",
+                uri="browser:plug_ins",
+                children=[
+                    _BrowserItem(
+                        "Arturia",
+                        uri="browser:plug_ins/arturia",
+                        children=[
+                            _BrowserItem(
+                                "Mini V",
+                                uri="browser:plug_ins/arturia/mini-v",
+                                is_loadable=True,
+                            )
+                        ],
+                    )
+                ],
+            )
 
         self._load_item_callback: object = None
 
@@ -173,6 +223,12 @@ class TestGetTree:
         assert len(result["categories"]) == 1
         assert result["categories"][0]["name"] == "Instruments"
 
+    def test_plugins_category_lookup(self, handler: BrowserHandler) -> None:
+        result = handler.handle_get_tree({"category": "plugins"})
+
+        assert len(result["categories"]) == 1
+        assert result["categories"][0]["name"] == "Plugins"
+
     def test_tree_depth_is_limited(self, handler: BrowserHandler) -> None:
         result = handler.handle_get_tree({"category": "instruments"})
 
@@ -180,8 +236,38 @@ class TestGetTree:
         assert deep_folder["name"] == "Deep Folder"
         assert deep_folder["children"] == []
 
+    def test_plugins_tree_browsing(self, handler: BrowserHandler) -> None:
+        result = handler.handle_get_tree({"category": "plugins"})
+
+        assert result["categories"][0]["children"][0]["name"] == "Arturia"
+        assert result["categories"][0]["children"][0]["children"][0]["name"] == (
+            "Mini V"
+        )
+
+    def test_plugins_fallback_to_plug_ins_root(self) -> None:
+        handler = BrowserHandler(_FakeControlSurface())
+        handler._control_surface.application().browser = _Browser(
+            plugin_root_name="plug_ins"
+        )
+
+        result = handler.handle_get_tree({"category": "plugins"})
+
+        assert result["categories"][0]["name"] == "Plugins"
+        assert result["categories"][0]["children"][0]["children"][0]["name"] == (
+            "Mini V"
+        )
+
     def test_invalid_category_raises(self, handler: BrowserHandler) -> None:
         with pytest.raises(InvalidParamsError, match="category"):
+            handler.handle_get_tree({"category": "max_for_live"})
+
+    def test_missing_plugin_root_raises_not_found(self) -> None:
+        browser = _Browser(plugin_root_name=None)
+        cs = _FakeControlSurface()
+        cs.application().browser = browser
+        handler = BrowserHandler(cs)
+
+        with pytest.raises(NotFoundError, match="Browser category 'plugins'"):
             handler.handle_get_tree({"category": "plugins"})
 
 
@@ -200,9 +286,27 @@ class TestGetItems:
 
         assert result == {"path": "instruments/Keys", "items": []}
 
+    def test_plugin_path_traversal(self, handler: BrowserHandler) -> None:
+        result = handler.handle_get_items({"path": "plugins/Arturia"})
+
+        assert result["path"] == "plugins/Arturia"
+        assert [item["name"] for item in result["items"]] == [
+            "Mini V",
+            "Vendor Folder",
+        ]
+
     def test_invalid_path_raises_not_found(self, handler: BrowserHandler) -> None:
         with pytest.raises(NotFoundError, match="Browser path not found"):
             handler.handle_get_items({"path": "instruments/missing"})
+
+    def test_missing_plugin_path_raises_not_found(self) -> None:
+        browser = _Browser(plugin_root_name=None)
+        cs = _FakeControlSurface()
+        cs.application().browser = browser
+        handler = BrowserHandler(cs)
+
+        with pytest.raises(NotFoundError, match="Browser category 'plugins'"):
+            handler.handle_get_items({"path": "plugins/Arturia"})
 
     def test_blank_path_is_invalid(self, handler: BrowserHandler) -> None:
         with pytest.raises(InvalidParamsError, match="path"):
@@ -224,6 +328,20 @@ class TestSearch:
             }
         ]
 
+    def test_plugin_search_matches_nested_items(self, handler: BrowserHandler) -> None:
+        result = handler.handle_search({"query": "deep", "category": "plugins"})
+
+        assert result["query"] == "deep"
+        assert result["category"] == "plugins"
+        assert result["items"] == [
+            {
+                "name": "Mini V Deep",
+                "path": "plugins/Arturia/Vendor Folder/Mini V Deep",
+                "uri": "browser:plugins/arturia/vendor-folder/mini-v-deep",
+                "is_loadable": True,
+            }
+        ]
+
     def test_search_misses_return_empty_list(self, handler: BrowserHandler) -> None:
         result = handler.handle_search({"query": "zzz", "category": "all"})
 
@@ -240,12 +358,22 @@ class TestSearch:
         with pytest.raises(InvalidParamsError, match="query"):
             handler.handle_search({"query": "   "})
 
+    def test_missing_plugin_root_raises_not_found(self) -> None:
+        browser = _Browser(plugin_root_name=None)
+        cs = _FakeControlSurface()
+        cs.application().browser = browser
+        handler = BrowserHandler(cs)
+
+        with pytest.raises(NotFoundError, match="Browser category 'plugins'"):
+            handler.handle_search({"query": "mini", "category": "plugins"})
+
 
 def _make_load_handler(
     *,
     track: _FakeTrack | None = None,
     load_adds_device: _FakeDevice | None = None,
     load_adds_device_after_ticks: int = 0,
+    browser_root_name: str | None = "plugins",
 ) -> BrowserHandler:
     """Build a BrowserHandler wired for load_instrument / load_effect tests.
 
@@ -256,6 +384,8 @@ def _make_load_handler(
     t = track or _FakeTrack()
     song = _FakeSong(tracks=[t])
     cs = _FakeControlSurface(song=song)
+    if browser_root_name is not None:
+        cs.application().browser = _Browser(plugin_root_name=browser_root_name)
 
     if load_adds_device is not None:
         if load_adds_device_after_ticks == 0:
@@ -318,6 +448,37 @@ class TestLoadInstrument:
         )
 
         assert result["name"] == "Analog Bass"
+
+    def test_loads_from_plugins_category(self) -> None:
+        device = _FakeDevice("Mini V", "OriginalSimpler")
+        handler = _make_load_handler(load_adds_device=device)
+
+        result = handler.handle_load_instrument(
+            {
+                "track_index": 1,
+                "uri": "browser:plugins/arturia/mini-v",
+            }
+        )
+
+        assert result["name"] == "Mini V"
+        assert result["device_index"] == 1
+
+    def test_loads_from_plug_ins_fallback_root(self) -> None:
+        device = _FakeDevice("Mini V", "OriginalSimpler")
+        handler = _make_load_handler(
+            load_adds_device=device,
+            browser_root_name="plug_ins",
+        )
+
+        result = handler.handle_load_instrument(
+            {
+                "track_index": 1,
+                "uri": "browser:plug_ins/arturia/mini-v",
+            }
+        )
+
+        assert result["name"] == "Mini V"
+        assert result["device_index"] == 1
 
     def test_rejects_audio_track(self) -> None:
         track = _FakeTrack(has_midi_input=False)

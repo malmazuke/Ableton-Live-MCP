@@ -354,7 +354,7 @@ These tools match or exceed the original ahujasid feature set, add arrangement v
 
 | Tool | Parameters | Returns | LOM Calls |
 |------|-----------|---------|-----------|
-| `get_browser_tree` | `category: str = "all"` | `BrowserTree` (hierarchical categories) | `browser.instruments/sounds/drums/audio_effects/midi_effects` |
+| `get_browser_tree` | `category: str = "all"` | `BrowserTree` (hierarchical categories) | `browser.instruments/sounds/drums/audio_effects/midi_effects/plugins` |
 | `get_browser_items` | `path: str` | `BrowserItems` (list of items with name, uri, is_loadable) | `browser.{category}.children` navigation |
 | `search_browser` | `query: str, category: str = "all"` | `BrowserSearchResult` | Recursive name matching |
 

@@ -55,6 +55,34 @@ BROWSER_TREE_RESULT = {
     ]
 }
 
+BROWSER_PLUGIN_TREE_RESULT = {
+    "categories": [
+        {
+            "name": "Plugins",
+            "uri": "browser:plugins",
+            "is_folder": True,
+            "is_loadable": False,
+            "children": [
+                {
+                    "name": "Arturia",
+                    "uri": "browser:plugins/arturia",
+                    "is_folder": True,
+                    "is_loadable": False,
+                    "children": [
+                        {
+                            "name": "Mini V",
+                            "uri": "browser:plugins/arturia/mini-v",
+                            "is_folder": False,
+                            "is_loadable": True,
+                            "children": [],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+}
+
 BROWSER_ITEMS_RESULT = {
     "path": "instruments/Synths",
     "items": [
@@ -71,6 +99,17 @@ BROWSER_ITEMS_RESULT = {
     ],
 }
 
+BROWSER_PLUGIN_ITEMS_RESULT = {
+    "path": "plugins/Arturia",
+    "items": [
+        {
+            "name": "Mini V",
+            "uri": "browser:plugins/arturia/mini-v",
+            "is_loadable": True,
+        }
+    ],
+}
+
 BROWSER_SEARCH_RESULT = {
     "query": "Analog",
     "category": "instruments",
@@ -79,6 +118,19 @@ BROWSER_SEARCH_RESULT = {
             "name": "Analog",
             "path": "instruments/Synths/Analog",
             "uri": "browser:instruments/synths/analog",
+            "is_loadable": True,
+        }
+    ],
+}
+
+BROWSER_PLUGIN_SEARCH_RESULT = {
+    "query": "Mini",
+    "category": "plugins",
+    "items": [
+        {
+            "name": "Mini V",
+            "path": "plugins/Arturia/Mini V",
+            "uri": "browser:plugins/arturia/mini-v",
             "is_loadable": True,
         }
     ],
@@ -127,6 +179,8 @@ class TestToolContracts:
             "drums",
             "audio_effects",
             "midi_effects",
+            "plugins",
+            "plug_ins",
         ]
 
     def test_get_browser_items_schema(self) -> None:
@@ -145,10 +199,20 @@ class TestInputValidation:
     def _arg_model(self, tool_name: str):
         return mcp._tool_manager._tools[tool_name].fn_metadata.arg_model
 
+    def test_get_browser_tree_accepts_plugins_category(self) -> None:
+        model = self._arg_model("get_browser_tree")
+        args = model(category="plugins")
+        assert args.category == "plugins"
+
+    def test_get_browser_tree_accepts_alias_category(self) -> None:
+        model = self._arg_model("get_browser_tree")
+        args = model(category="plug_ins")
+        assert args.category == "plug_ins"
+
     def test_get_browser_tree_rejects_unknown_category(self) -> None:
         model = self._arg_model("get_browser_tree")
         with pytest.raises(ValidationError):
-            model(category="plugins")
+            model(category="max_for_live")
 
     def test_get_browser_items_rejects_empty_path(self) -> None:
         model = self._arg_model("get_browser_items")
@@ -188,6 +252,22 @@ class TestGetBrowserTree:
         assert req.command == "browser.get_tree"
         assert req.params == {"category": "drums"}
 
+    async def test_normalizes_plugin_alias_category(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            BROWSER_PLUGIN_TREE_RESULT
+        )
+
+        result = await get_browser_tree(ctx=mock_context, category="plug_ins")
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "browser.get_tree"
+        assert req.params == {"category": "plugins"}
+        assert result.categories[0].name == "Plugins"
+
 
 class TestGetBrowserItems:
     async def test_returns_items(
@@ -203,6 +283,21 @@ class TestGetBrowserItems:
         assert result.path == "instruments/Synths"
         assert result.items[0].name == "Analog"
         assert result.items[1].is_loadable is True
+
+    async def test_returns_plugin_items(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            BROWSER_PLUGIN_ITEMS_RESULT
+        )
+
+        result = await get_browser_items(ctx=mock_context, path="plugins/Arturia")
+
+        assert isinstance(result, BrowserItemsResult)
+        assert result.path == "plugins/Arturia"
+        assert result.items[0].name == "Mini V"
 
     async def test_raises_on_not_found(
         self,
@@ -237,6 +332,25 @@ class TestSearchBrowser:
         assert result.category == "instruments"
         assert result.items[0].path == "instruments/Synths/Analog"
 
+    async def test_returns_plugin_search_results(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            BROWSER_PLUGIN_SEARCH_RESULT
+        )
+
+        result = await search_browser(
+            ctx=mock_context,
+            query="Mini",
+            category="plugins",
+        )
+
+        assert isinstance(result, BrowserSearchResult)
+        assert result.category == "plugins"
+        assert result.items[0].path == "plugins/Arturia/Mini V"
+
     async def test_sends_correct_command(
         self,
         mock_context: MagicMock,
@@ -253,6 +367,25 @@ class TestSearchBrowser:
         req = mock_connection.send_command.call_args[0][0]
         assert req.command == "browser.search"
         assert req.params == {"query": "Analog", "category": "instruments"}
+
+    async def test_sends_normalized_plugin_alias_command(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            BROWSER_PLUGIN_SEARCH_RESULT
+        )
+
+        await search_browser(
+            ctx=mock_context,
+            query="Mini",
+            category="plug_ins",
+        )
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "browser.search"
+        assert req.params == {"query": "Mini", "category": "plugins"}
 
     async def test_empty_results_are_allowed(
         self,
