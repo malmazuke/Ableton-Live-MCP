@@ -33,6 +33,20 @@ class _EchoHandler:
             "is_playing": True,
         }
 
+    def handle_undo(self, params):
+        return {
+            "action": "undo",
+            "can_undo": False,
+            "can_redo": True,
+        }
+
+    def handle_redo(self, params):
+        return {
+            "action": "redo",
+            "can_undo": True,
+            "can_redo": False,
+        }
+
 
 class _BrowserHandler:
     def handle_get_tree(self, params):
@@ -316,6 +330,35 @@ class TestFullRoundTrip:
             "action": "start_recording",
             "is_recording": True,
             "is_playing": True,
+        }
+
+        await conn.disconnect()
+
+    async def test_undo_redo_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        undo_request = CommandRequest(command="session.undo", id="undo-1")
+        undo_response = await conn.send_command(undo_request)
+
+        assert undo_response.status == "ok"
+        assert undo_response.id == "undo-1"
+        assert undo_response.result == {
+            "action": "undo",
+            "can_undo": False,
+            "can_redo": True,
+        }
+
+        redo_request = CommandRequest(command="session.redo", id="redo-1")
+        redo_response = await conn.send_command(redo_request)
+
+        assert redo_response.status == "ok"
+        assert redo_response.id == "redo-1"
+        assert redo_response.result == {
+            "action": "redo",
+            "can_undo": True,
+            "can_redo": False,
         }
 
         await conn.disconnect()

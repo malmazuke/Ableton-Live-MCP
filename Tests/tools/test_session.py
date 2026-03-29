@@ -27,9 +27,11 @@ from mcp_ableton.tools.session import (
     TempoResult,
     TimeSignatureResult,
     TransportResult,
+    UndoRedoResult,
     capture_midi,
     get_playback_position,
     get_session_info,
+    redo,
     set_overdub,
     set_tempo,
     set_time_signature,
@@ -37,6 +39,7 @@ from mcp_ableton.tools.session import (
     start_recording,
     stop_playback,
     stop_recording,
+    undo,
 )
 
 # ---------------------------------------------------------------------------
@@ -50,6 +53,8 @@ TOOL_NAMES = [
     "stop_playback",
     "start_recording",
     "stop_recording",
+    "undo",
+    "redo",
     "capture_midi",
     "set_overdub",
     "get_playback_position",
@@ -135,6 +140,16 @@ class TestToolContracts:
 
     def test_stop_recording_has_no_required_params(self) -> None:
         tool = self._get_tool("stop_recording")
+        required = tool.parameters.get("required", [])
+        assert required == []
+
+    def test_undo_has_no_required_params(self) -> None:
+        tool = self._get_tool("undo")
+        required = tool.parameters.get("required", [])
+        assert required == []
+
+    def test_redo_has_no_required_params(self) -> None:
+        tool = self._get_tool("redo")
         required = tool.parameters.get("required", [])
         assert required == []
 
@@ -531,6 +546,90 @@ class TestStopRecording:
         assert req.params == {}
 
 
+class TestUndo:
+    RESULT = {
+        "action": "undo",
+        "can_undo": False,
+        "can_redo": True,
+    }
+
+    async def test_returns_undo_redo_result(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(self.RESULT)
+
+        result = await undo(ctx=mock_context)
+
+        assert isinstance(result, UndoRedoResult)
+        assert result.action == "undo"
+        assert result.can_undo is False
+        assert result.can_redo is True
+
+    async def test_sends_correct_command(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(self.RESULT)
+
+        await undo(ctx=mock_context)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "session.undo"
+        assert req.params == {}
+
+    async def test_raises_on_error_response(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="No undo history available",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await undo(ctx=mock_context)
+
+
+class TestRedo:
+    RESULT = {
+        "action": "redo",
+        "can_undo": True,
+        "can_redo": False,
+    }
+
+    async def test_returns_undo_redo_result(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(self.RESULT)
+
+        result = await redo(ctx=mock_context)
+
+        assert isinstance(result, UndoRedoResult)
+        assert result.action == "redo"
+        assert result.can_undo is True
+        assert result.can_redo is False
+
+    async def test_sends_correct_command(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(self.RESULT)
+
+        await redo(ctx=mock_context)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "session.redo"
+        assert req.params == {}
+
+    async def test_raises_on_error_response(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="No redo history available",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await redo(ctx=mock_context)
+
+
 class TestCaptureMidi:
     async def test_returns_capture_result(
         self, mock_context: MagicMock, mock_connection: AsyncMock
@@ -629,6 +728,20 @@ class TestResponseModels:
     def test_overdub_result_rejects_missing_overdub(self) -> None:
         with pytest.raises(ValidationError):
             OverdubResult.model_validate({})
+
+    def test_undo_redo_result_rejects_missing_flags(self) -> None:
+        with pytest.raises(ValidationError):
+            UndoRedoResult.model_validate({"action": "undo"})
+
+    def test_undo_redo_result_accepts_valid_data(self) -> None:
+        result = UndoRedoResult.model_validate(
+            {
+                "action": "redo",
+                "can_undo": True,
+                "can_redo": False,
+            }
+        )
+        assert result.action == "redo"
 
     def test_playback_position_accepts_valid_data(self) -> None:
         pos = PlaybackPosition.model_validate(

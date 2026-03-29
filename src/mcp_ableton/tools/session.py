@@ -71,6 +71,14 @@ class OverdubResult(BaseModel):
     overdub: bool
 
 
+class UndoRedoResult(BaseModel):
+    """Result of an undo or redo action."""
+
+    action: Literal["undo", "redo"]
+    can_undo: bool
+    can_redo: bool
+
+
 class PlaybackPosition(BaseModel):
     """Current playback position returned by ``get_playback_position``."""
 
@@ -174,6 +182,20 @@ async def stop_recording(ctx: Context) -> RecordingResult:
 
 
 @mcp.tool()
+async def undo(ctx: Context) -> UndoRedoResult:
+    """Undo the last action in Ableton Live."""
+    result = await _send_session_command(ctx, "session.undo")
+    return UndoRedoResult.model_validate(result)
+
+
+@mcp.tool()
+async def redo(ctx: Context) -> UndoRedoResult:
+    """Redo the last undone action in Ableton Live."""
+    result = await _send_session_command(ctx, "session.redo")
+    return UndoRedoResult.model_validate(result)
+
+
+@mcp.tool()
 async def capture_midi(
     ctx: Context,
     destination: Annotated[
@@ -235,9 +257,11 @@ __all__ = [
     "TempoResult",
     "TimeSignatureResult",
     "TransportResult",
+    "UndoRedoResult",
     "capture_midi",
     "get_playback_position",
     "get_session_info",
+    "redo",
     "set_overdub",
     "set_tempo",
     "set_time_signature",
@@ -245,4 +269,5 @@ __all__ = [
     "start_playback",
     "stop_recording",
     "stop_playback",
+    "undo",
 ]
