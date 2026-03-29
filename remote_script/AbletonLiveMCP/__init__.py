@@ -55,6 +55,7 @@ class AbletonLiveMCP(ControlSurface):
         from .handlers.clip import ClipHandler
         from .handlers.device import DeviceHandler
         from .handlers.mixer import MixerHandler
+        from .handlers.scene import SceneHandler
         from .handlers.session import SessionHandler
         from .handlers.track import TrackHandler
 
@@ -65,6 +66,7 @@ class AbletonLiveMCP(ControlSurface):
         self._dispatcher.register("arrangement", ArrangementHandler(self))
         self._dispatcher.register("browser", BrowserHandler(self))
         self._dispatcher.register("mixer", MixerHandler(self))
+        self._dispatcher.register("scene", SceneHandler(self))
 
     def disconnect(self) -> None:
         """Ableton lifecycle hook -- shut down the TCP server."""

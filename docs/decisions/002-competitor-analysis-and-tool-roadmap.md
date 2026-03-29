@@ -364,11 +364,13 @@ These tools match or exceed the original ahujasid feature set, add arrangement v
 
 These tools add scene management, arrangement view (our key differentiator), sends/returns, recording, and clip properties.
 
-#### Scene Management (5 tools)
+#### Scene Management (7 tools)
 - `get_scenes` — list all scenes with names and indices
 - `create_scene` — create at index
 - `delete_scene` — delete by index
+- `duplicate_scene` — duplicate a scene
 - `fire_scene` — launch scene
+- `stop_scene` — stop the targeted scene row
 - `set_scene_name` — rename scene
 
 #### Arrangement View (5 tools)
@@ -400,7 +402,7 @@ These tools add scene management, arrangement view (our key differentiator), sen
 - `undo` — undo last action
 - `redo` — redo last undone action
 
-**Phase 2 total: 24 tools** (cumulative: 61 tools)
+**Phase 2 total: 26 tools** (cumulative: 63 tools)
 
 ### Phase 3: Advanced
 
@@ -491,6 +493,13 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `set_track_mute` | `track.set_mute` |
 | `set_track_solo` | `track.set_solo` |
 | `set_track_arm` | `track.set_arm` |
+| `get_scenes` | `scene.get_all` |
+| `create_scene` | `scene.create` |
+| `delete_scene` | `scene.delete` |
+| `duplicate_scene` | `scene.duplicate` |
+| `fire_scene` | `scene.fire` |
+| `stop_scene` | `scene.stop` |
+| `set_scene_name` | `scene.set_name` |
 | `create_clip` | `clip.create` |
 | `add_notes_to_clip` | `clip.add_notes` |
 | `get_clip_notes` | `clip.get_notes` |

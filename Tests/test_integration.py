@@ -113,6 +113,36 @@ class _ArrangementHandler:
         }
 
 
+class _SceneHandler:
+    def handle_get_all(self, params):
+        return {
+            "scenes": [
+                {
+                    "scene_index": 1,
+                    "name": "Intro",
+                    "is_empty": False,
+                    "is_triggered": False,
+                    "tempo_enabled": True,
+                    "tempo": 120.0,
+                    "time_signature_enabled": True,
+                    "time_signature_numerator": 4,
+                    "time_signature_denominator": 4,
+                },
+                {
+                    "scene_index": 2,
+                    "name": "Breakdown",
+                    "is_empty": True,
+                    "is_triggered": True,
+                    "tempo_enabled": False,
+                    "tempo": None,
+                    "time_signature_enabled": False,
+                    "time_signature_numerator": None,
+                    "time_signature_denominator": None,
+                },
+            ]
+        }
+
+
 @pytest.fixture
 def tcp_server():
     """Start a real TcpServer in a background thread on an OS-assigned port."""
@@ -123,6 +153,7 @@ def tcp_server():
     dispatcher.register("device", _DeviceHandler())
     dispatcher.register("mixer", _MixerHandler())
     dispatcher.register("arrangement", _ArrangementHandler())
+    dispatcher.register("scene", _SceneHandler())
 
     logs: list[str] = []
     server = TcpServer(
@@ -224,6 +255,23 @@ class TestFullRoundTrip:
         assert resp.result["device_name"] == "Analog"
         assert resp.result["parameters"][0]["parameter_index"] == 1
         assert resp.result["parameters"][1]["name"] == "Filter Freq"
+
+        await conn.disconnect()
+
+    async def test_scene_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(command="scene.get_all", id="scene-1")
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "scene-1"
+        assert resp.result is not None
+        assert resp.result["scenes"][0]["name"] == "Intro"
+        assert resp.result["scenes"][1]["tempo"] is None
+        assert resp.result["scenes"][1]["time_signature_denominator"] is None
 
         await conn.disconnect()
 

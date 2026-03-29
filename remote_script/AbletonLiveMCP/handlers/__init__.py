@@ -9,6 +9,7 @@ from .browser import BrowserHandler
 from .clip import ClipHandler
 from .device import DeviceHandler
 from .mixer import MixerHandler
+from .scene import SceneHandler
 from .session import SessionHandler
 from .track import TrackHandler
 
@@ -18,6 +19,7 @@ __all__ = [
     "ClipHandler",
     "DeviceHandler",
     "MixerHandler",
+    "SceneHandler",
     "SessionHandler",
     "TrackHandler",
 ]
