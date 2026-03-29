@@ -371,7 +371,8 @@ These tools match or exceed the original ahujasid feature set, add arrangement v
 
 ### Phase 2: Extended Capabilities
 
-These tools add scene management, arrangement view (our key differentiator), sends/returns, recording, and clip properties.
+These tools add scene management, arrangement view (our key differentiator),
+audio import, sends/returns, recording, and clip properties.
 
 #### Scene Management (7 tools)
 - `get_scenes` — list all scenes with names and indices
@@ -388,6 +389,10 @@ These tools add scene management, arrangement view (our key differentiator), sen
 - `move_arrangement_clip` — move clip to new position/track
 - `get_arrangement_length` — total arrangement length
 - `set_arrangement_loop` — loop start, end, enabled
+
+#### Audio Import (2 tools)
+- `import_audio_to_session` — import a local audio file into an empty session slot
+- `import_audio_to_arrangement` — import a local audio file into arrangement at a beat position
 
 #### Sends & Returns (4 tools)
 - `get_return_tracks` — list return tracks
@@ -411,7 +416,7 @@ These tools add scene management, arrangement view (our key differentiator), sen
 - `undo` — undo last action
 - `redo` — redo last undone action
 
-**Phase 2 total: 26 tools** (cumulative: 63 tools)
+**Phase 2 total: 28 tools** (cumulative: 65 tools)
 
 ### Phase 3: Advanced
 
@@ -441,7 +446,7 @@ These tools cover niche but valuable capabilities. Prioritized based on communit
 - `get_groove_pool` — list available grooves
 - `apply_groove` — apply groove to clip
 
-**Phase 3 total: 14 tools** (cumulative: 75 tools)
+**Phase 3 total: 14 tools** (cumulative: 79 tools)
 
 ### Explicitly excluded
 
@@ -517,6 +522,7 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `stop_scene` | `scene.stop` |
 | `set_scene_name` | `scene.set_name` |
 | `create_clip` | `clip.create` |
+| `import_audio_to_session` | `clip.import_audio` |
 | `delete_clip` | `clip.delete` |
 | `duplicate_clip` | `clip.duplicate` |
 | `set_clip_name` | `clip.set_name` |
@@ -533,6 +539,7 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `set_clip_automation` | `clip.set_automation` |
 | `get_arrangement_clips` | `arrangement.get_clips` |
 | `create_arrangement_clip` | `arrangement.create_clip` |
+| `import_audio_to_arrangement` | `arrangement.import_audio` |
 | `move_arrangement_clip` | `arrangement.move_clip` |
 | `get_arrangement_length` | `arrangement.get_length` |
 | `set_arrangement_loop` | `arrangement.set_loop` |

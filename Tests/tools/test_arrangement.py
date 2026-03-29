@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 from mcp_ableton._app import mcp
 from mcp_ableton.protocol import CommandError, CommandResponse, ErrorDetail
 from mcp_ableton.tools.arrangement import (
+    ArrangementAudioImportResult,
     ArrangementClipCreatedResult,
     ArrangementClipInfo,
     ArrangementClipMovedResult,
@@ -22,6 +23,7 @@ from mcp_ableton.tools.arrangement import (
     create_arrangement_clip,
     get_arrangement_clips,
     get_arrangement_length,
+    import_audio_to_arrangement,
     move_arrangement_clip,
     set_arrangement_loop,
 )
@@ -32,6 +34,7 @@ TOOL_NAMES = [
     "move_arrangement_clip",
     "get_arrangement_length",
     "set_arrangement_loop",
+    "import_audio_to_arrangement",
 ]
 
 ARRANGEMENT_CLIPS_RESULT = {
@@ -58,6 +61,16 @@ ARRANGEMENT_CLIPS_RESULT = {
             "is_midi_clip": False,
         },
     ],
+}
+
+ARRANGEMENT_AUDIO_IMPORT_RESULT = {
+    "track_index": 2,
+    "clip_index": 2,
+    "name": "vocal",
+    "file_path": "/tmp/vocal.wav",
+    "start_time": 12.0,
+    "length": 8.5,
+    "is_audio_clip": True,
 }
 
 
@@ -121,6 +134,13 @@ class TestToolContracts:
         assert props["end_time"]["minimum"] == 0.0
         assert props["enabled"]["default"] is True
 
+    def test_import_audio_to_arrangement_schema(self) -> None:
+        tool = self._get_tool("import_audio_to_arrangement")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+        assert props["start_time"]["minimum"] == 0.0
+        assert props["file_path"]["type"] == "string"
+
 
 class TestInputValidation:
     def _arg_model(self, tool_name: str):
@@ -164,6 +184,11 @@ class TestInputValidation:
         model = self._arg_model("set_arrangement_loop")
         with pytest.raises(ValidationError):
             model(start_time=0.0, end_time=-1.0)
+
+    def test_import_audio_to_arrangement_rejects_relative_file_path(self) -> None:
+        model = self._arg_model("import_audio_to_arrangement")
+        with pytest.raises(ValidationError):
+            model(track_index=2, file_path="audio/vocal.wav", start_time=4.0)
 
 
 class TestGetArrangementClips:
@@ -384,3 +409,62 @@ class TestArrangementLengthAndLoop:
             )
 
         mock_connection.send_command.assert_not_called()
+
+
+class TestImportAudioToArrangement:
+    async def test_sends_correct_command(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "vocal.wav"
+        file_path.write_bytes(b"RIFF")
+        response_result = dict(ARRANGEMENT_AUDIO_IMPORT_RESULT)
+        response_result["file_path"] = str(file_path)
+        mock_connection.send_command.return_value = _ok_response(response_result)
+
+        result = await import_audio_to_arrangement(
+            ctx=mock_context,
+            track_index=2,
+            file_path=str(file_path),
+            start_time=12.0,
+        )
+
+        assert isinstance(result, ArrangementAudioImportResult)
+        assert result.clip_index == 2
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.import_audio"
+        assert req.params == {
+            "track_index": 2,
+            "file_path": str(file_path),
+            "start_time": 12.0,
+        }
+
+    async def test_raises_on_error(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "missing.wav"
+        mock_connection.send_command.return_value = _error_response(
+            code="NOT_FOUND",
+            message=f"File does not exist: {file_path}",
+        )
+
+        with pytest.raises(CommandError, match="NOT_FOUND"):
+            await import_audio_to_arrangement(
+                ctx=mock_context,
+                track_index=2,
+                file_path=str(file_path),
+                start_time=4.0,
+            )
+
+
+class TestResponseModels:
+    def test_arrangement_audio_import_accepts_valid(self) -> None:
+        result = ArrangementAudioImportResult.model_validate(
+            ARRANGEMENT_AUDIO_IMPORT_RESULT
+        )
+        assert result.is_audio_clip is True

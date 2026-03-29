@@ -265,6 +265,47 @@ class ArrangementHandler(BaseHandler):
 
         return self._run_on_main_thread(_create)
 
+    def handle_import_audio(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Import an audio file into arrangement view on an audio track."""
+        track_index = self._require_track_index(params, "track_index")
+        assert track_index is not None
+        file_path = self._require_absolute_file_path(params, "file_path")
+        self._require_existing_file(file_path)
+        start_time = self._require_number(params, "start_time", minimum=0.0)
+
+        def _import() -> dict[str, Any]:
+            track, resolved_track_index, _ = self._resolve_track(track_index)
+            if not bool(track.has_audio_input):
+                raise InvalidParamsError(
+                    f"Track {resolved_track_index} does not accept audio clips"
+                )
+
+            before = list(track.arrangement_clips)
+            try:
+                track.create_audio_clip(file_path, start_time)
+            except Exception as exc:
+                raise InvalidParamsError(
+                    "Unable to import audio clip to arrangement track "
+                    f"{resolved_track_index}: {exc}"
+                ) from exc
+
+            clip_index, clip = self._find_new_clip(
+                before,
+                list(track.arrangement_clips),
+                action="import_audio_to_arrangement",
+            )
+            return {
+                "track_index": resolved_track_index,
+                "clip_index": clip_index,
+                "name": str(clip.name),
+                "file_path": file_path,
+                "start_time": float(clip.start_time),
+                "length": float(clip.length),
+                "is_audio_clip": bool(clip.is_audio_clip),
+            }
+
+        return self._run_on_main_thread(_import)
+
     def handle_move_clip(self, params: dict[str, Any]) -> dict[str, Any]:
         """Move an arrangement clip to a new track/time by duplicate-then-delete."""
         source_track_index = self._require_track_index(params, "track_index")

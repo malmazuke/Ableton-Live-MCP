@@ -748,6 +748,49 @@ class ClipHandler(BaseHandler):
 
         return self._run_on_main_thread(_do)
 
+    def handle_import_audio(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Import an audio file into an empty session slot on an audio track."""
+        file_path = self._require_absolute_file_path(params, "file_path")
+        self._require_existing_file(file_path)
+
+        def _do() -> dict[str, Any]:
+            track, slot, track_index, slot_index, _lo = self._resolve_clip_slot(
+                params,
+            )
+            if slot.has_clip:
+                raise InvalidParamsError(
+                    f"Clip slot {slot_index} on track {track_index} already has a clip"
+                )
+            if not bool(track.has_audio_input):
+                raise InvalidParamsError(
+                    f"Track {track_index} does not accept audio clips"
+                )
+
+            try:
+                slot.create_audio_clip(file_path)
+            except Exception as exc:
+                raise InvalidParamsError(
+                    "Failed to import audio into session clip slot "
+                    f"{slot_index} on track {track_index}: {exc}"
+                ) from exc
+
+            if not slot.has_clip:
+                raise RuntimeError(
+                    "Audio import completed but no clip appeared in the target slot"
+                )
+
+            clip = slot.clip
+            return {
+                "track_index": track_index,
+                "clip_slot_index": slot_index,
+                "name": str(clip.name),
+                "file_path": file_path,
+                "length": float(clip.length),
+                "is_audio_clip": bool(clip.is_audio_clip),
+            }
+
+        return self._run_on_main_thread(_do)
+
     def handle_delete(self, params: dict[str, Any]) -> dict[str, Any]:
         """Remove the clip in the given slot."""
 

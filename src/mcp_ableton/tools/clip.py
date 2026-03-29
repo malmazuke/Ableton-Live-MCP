@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.server.fastmcp import Context  # noqa: TCH002
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from mcp_ableton._app import mcp
 from mcp_ableton.protocol import CommandRequest
@@ -22,6 +23,19 @@ NoteDuration = Annotated[float, Field(gt=0.0)]
 NoteVelocity = Annotated[float, Field(ge=0.0, le=127.0)]
 NoteProbability = Annotated[float, Field(ge=0.0, le=1.0)]
 NoteVelocityDeviation = Annotated[float, Field(ge=-127.0, le=127.0)]
+
+
+def _validate_absolute_local_file_path(value: str) -> str:
+    """Require an absolute local filesystem path without URI schemes."""
+    if "://" in value:
+        raise ValueError("'file_path' must be an absolute local filesystem path")
+
+    is_absolute = (
+        PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
+    )
+    if not is_absolute:
+        raise ValueError("'file_path' must be an absolute local filesystem path")
+    return value
 
 
 class ClipCreatedResult(BaseModel):
@@ -84,6 +98,24 @@ class ClipColorResult(BaseModel):
     track_index: int
     clip_slot_index: int
     color_index: int
+
+
+AbsoluteLocalFilePath = Annotated[
+    str,
+    AfterValidator(_validate_absolute_local_file_path),
+    Field(description="Absolute local filesystem path to an audio file."),
+]
+
+
+class SessionAudioImportResult(BaseModel):
+    """Result of ``import_audio_to_session``."""
+
+    track_index: int
+    clip_slot_index: int
+    name: str
+    file_path: str
+    length: float
+    is_audio_clip: bool
 
 
 class NoteObjectInput(BaseModel):
@@ -466,6 +498,28 @@ async def set_clip_color(
 
 
 @mcp.tool()
+async def import_audio_to_session(
+    ctx: Context,
+    track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
+    clip_slot_index: ClipSlotIndex,
+    file_path: AbsoluteLocalFilePath,
+) -> SessionAudioImportResult:
+    """Import an audio file into an empty session slot on an audio track."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="clip.import_audio",
+        params={
+            "track_index": track_index,
+            "clip_slot_index": clip_slot_index,
+            "file_path": file_path,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return SessionAudioImportResult.model_validate(response.result)
+
+
+@mcp.tool()
 async def get_clip_notes(
     ctx: Context,
     track_index: Annotated[int, Field(description="1-based track index.", ge=1)],
@@ -680,6 +734,7 @@ async def set_clip_notes(
 
 
 __all__ = [
+    "AbsoluteLocalFilePath",
     "ClipAutomationPoint",
     "ClipAutomationResult",
     "ClipAutomationSetResult",
@@ -698,6 +753,7 @@ __all__ = [
     "NotesAddedResult",
     "NotesRemovedResult",
     "NotesSetResult",
+    "SessionAudioImportResult",
     "add_notes_to_clip",
     "create_clip",
     "delete_clip",
@@ -706,6 +762,7 @@ __all__ = [
     "get_clip_automation",
     "get_clip_info",
     "get_clip_notes",
+    "import_audio_to_session",
     "remove_notes",
     "set_clip_automation",
     "set_clip_color",

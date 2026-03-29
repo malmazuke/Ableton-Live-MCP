@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from AbletonLiveMCP.dispatcher import InvalidParamsError, NotFoundError
 from AbletonLiveMCP.handlers.clip import ClipHandler
@@ -192,6 +194,12 @@ class _Slot:
         self._clip = _Clip(name="MIDI Clip", length=length, audio=False)
         self.has_clip = True
 
+    def create_audio_clip(self, file_path: str) -> None:
+        if self.has_clip:
+            raise RuntimeError("already has clip")
+        self._clip = _Clip(name=Path(file_path).stem, length=6.5, audio=True)
+        self.has_clip = True
+
     def delete_clip(self) -> None:
         self._clip = None
         self.has_clip = False
@@ -331,6 +339,105 @@ class TestCreateDelete:
         result = handler_clip.handle_delete({"track_index": 1, "clip_slot_index": 2})
         assert result == {"track_index": 1, "clip_slot_index": 2}
         assert not song_clip.tracks[0].clip_slots[1].has_clip
+
+
+class TestImportAudio:
+    def test_success_on_audio_track(self, tmp_path) -> None:
+        file_path = tmp_path / "drums.wav"
+        file_path.write_bytes(b"RIFF")
+        song = _FakeSong()
+        song.tracks = [_track_with_slots(_Slot(), _Slot(), midi=False, audio=True)]
+        handler = ClipHandler(_FakeControlSurface(song))
+
+        result = handler.handle_import_audio(
+            {
+                "track_index": 1,
+                "clip_slot_index": 1,
+                "file_path": str(file_path),
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "clip_slot_index": 1,
+            "name": "drums",
+            "file_path": str(file_path),
+            "length": 6.5,
+            "is_audio_clip": True,
+        }
+        slot = song.tracks[0].clip_slots[0]
+        assert slot.has_clip
+        assert slot.clip.is_audio_clip is True
+
+    def test_rejects_midi_only_track(self, tmp_path) -> None:
+        file_path = tmp_path / "drums.wav"
+        file_path.write_bytes(b"RIFF")
+        song = _FakeSong()
+        song.tracks = [_track_with_slots(_Slot(), _Slot(), midi=True, audio=False)]
+        handler = ClipHandler(_FakeControlSurface(song))
+
+        with pytest.raises(InvalidParamsError, match="does not accept audio clips"):
+            handler.handle_import_audio(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 1,
+                    "file_path": str(file_path),
+                }
+            )
+
+    def test_rejects_occupied_slot(self, tmp_path) -> None:
+        file_path = tmp_path / "drums.wav"
+        file_path.write_bytes(b"RIFF")
+        song = _FakeSong()
+        song.tracks = [
+            _track_with_slots(
+                _Slot(_Clip("Existing", audio=True)),
+                midi=False,
+                audio=True,
+            )
+        ]
+        handler = ClipHandler(_FakeControlSurface(song))
+
+        with pytest.raises(InvalidParamsError, match="already has a clip"):
+            handler.handle_import_audio(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 1,
+                    "file_path": str(file_path),
+                }
+            )
+
+    def test_rejects_missing_file(self, tmp_path) -> None:
+        file_path = tmp_path / "missing.wav"
+        song = _FakeSong()
+        song.tracks = [_track_with_slots(_Slot(), midi=False, audio=True)]
+        handler = ClipHandler(_FakeControlSurface(song))
+
+        with pytest.raises(NotFoundError, match="File does not exist"):
+            handler.handle_import_audio(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 1,
+                    "file_path": str(file_path),
+                }
+            )
+
+    def test_rejects_malformed_file_path(self) -> None:
+        song = _FakeSong()
+        song.tracks = [_track_with_slots(_Slot(), midi=False, audio=True)]
+        handler = ClipHandler(_FakeControlSurface(song))
+
+        with pytest.raises(
+            InvalidParamsError,
+            match="absolute local filesystem path",
+        ):
+            handler.handle_import_audio(
+                {
+                    "track_index": 1,
+                    "clip_slot_index": 1,
+                    "file_path": "samples/drums.wav",
+                }
+            )
 
 
 class TestDuplicate:

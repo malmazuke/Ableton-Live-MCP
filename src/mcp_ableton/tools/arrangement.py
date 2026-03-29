@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Annotated
 
 from mcp.server.fastmcp import Context  # noqa: TCH002
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from mcp_ableton._app import mcp
 from mcp_ableton.protocol import CommandRequest
@@ -43,6 +44,26 @@ PositiveLength = Annotated[
         description="Clip length in beats (must be > 0).",
         gt=0.0,
     ),
+]
+
+
+def _validate_absolute_local_file_path(value: str) -> str:
+    """Require an absolute local filesystem path without URI schemes."""
+    if "://" in value:
+        raise ValueError("'file_path' must be an absolute local filesystem path")
+
+    is_absolute = (
+        PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
+    )
+    if not is_absolute:
+        raise ValueError("'file_path' must be an absolute local filesystem path")
+    return value
+
+
+AudioFilePath = Annotated[
+    str,
+    AfterValidator(_validate_absolute_local_file_path),
+    Field(description="Absolute local filesystem path to an audio file."),
 ]
 
 
@@ -98,6 +119,18 @@ class ArrangementLoopResult(BaseModel):
     start_time: float
     end_time: float
     enabled: bool
+
+
+class ArrangementAudioImportResult(BaseModel):
+    """Result of ``import_audio_to_arrangement``."""
+
+    track_index: int
+    clip_index: int
+    name: str
+    file_path: str
+    start_time: float
+    length: float
+    is_audio_clip: bool
 
 
 def _get_connection(ctx: Context) -> AbletonConnection:
@@ -228,16 +261,41 @@ async def set_arrangement_loop(
     return ArrangementLoopResult.model_validate(response.result)
 
 
+@mcp.tool()
+async def import_audio_to_arrangement(
+    ctx: Context,
+    track_index: TrackIndex,
+    file_path: AudioFilePath,
+    start_time: StartTime,
+) -> ArrangementAudioImportResult:
+    """Import an audio file into arrangement view on an audio track."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.import_audio",
+        params={
+            "track_index": track_index,
+            "file_path": file_path,
+            "start_time": start_time,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ArrangementAudioImportResult.model_validate(response.result)
+
+
 __all__ = [
+    "ArrangementAudioImportResult",
     "ArrangementClipCreatedResult",
     "ArrangementClipInfo",
     "ArrangementClipMovedResult",
     "ArrangementClipsResult",
     "ArrangementLengthResult",
     "ArrangementLoopResult",
+    "AudioFilePath",
     "create_arrangement_clip",
     "get_arrangement_clips",
     "get_arrangement_length",
+    "import_audio_to_arrangement",
     "move_arrangement_clip",
     "set_arrangement_loop",
 ]
