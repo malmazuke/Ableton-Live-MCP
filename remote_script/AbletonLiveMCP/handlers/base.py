@@ -5,9 +5,12 @@ The handler runs on a client-socket thread; use ``_run_on_main_thread``
 for any operation that mutates Ableton's state.
 """
 
+import os
 import queue
 from collections.abc import Callable
 from typing import Any
+
+from ..dispatcher import InvalidParamsError, NotFoundError
 
 MAIN_THREAD_TIMEOUT = 30
 
@@ -28,6 +31,28 @@ class BaseHandler:
 
     def _log(self, message: str) -> None:
         self._control_surface.log_message(message)
+
+    def _require_absolute_file_path(
+        self,
+        params: dict[str, Any],
+        name: str = "file_path",
+    ) -> str:
+        """Validate and return an absolute local filesystem path parameter."""
+        raw_value = params.get(name)
+        if raw_value is None:
+            raise InvalidParamsError(f"'{name}' parameter is required")
+        if not isinstance(raw_value, str) or not raw_value:
+            raise InvalidParamsError(f"'{name}' must be a string")
+        if "://" in raw_value or not os.path.isabs(raw_value):
+            raise InvalidParamsError(
+                f"'{name}' must be an absolute local filesystem path"
+            )
+        return raw_value
+
+    def _require_existing_file(self, file_path: str) -> None:
+        """Ensure the referenced local file exists before touching Live."""
+        if not os.path.isfile(file_path):
+            raise NotFoundError(f"File does not exist: {file_path}")
 
     def _run_on_main_thread(self, fn: Callable[[], Any]) -> Any:
         """Schedule *fn* on Ableton's main thread and block until it completes.

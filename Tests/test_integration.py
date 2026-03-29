@@ -138,6 +138,17 @@ class _ArrangementHandler:
             ],
         }
 
+    def handle_import_audio(self, params):
+        return {
+            "track_index": params["track_index"],
+            "clip_index": 2,
+            "name": "vocal",
+            "file_path": params["file_path"],
+            "start_time": params["start_time"],
+            "length": 8.5,
+            "is_audio_clip": True,
+        }
+
 
 class _SceneHandler:
     def handle_get_all(self, params):
@@ -170,6 +181,16 @@ class _SceneHandler:
 
 
 class _ClipHandler:
+    def handle_import_audio(self, params):
+        return {
+            "track_index": params["track_index"],
+            "clip_slot_index": params["clip_slot_index"],
+            "name": "drums",
+            "file_path": params["file_path"],
+            "length": 6.5,
+            "is_audio_clip": True,
+        }
+
     def handle_set_loop(self, params):
         return {
             "track_index": params["track_index"],
@@ -445,6 +466,36 @@ class TestFullRoundTrip:
 
         await conn.disconnect()
 
+    async def test_arrangement_audio_import_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="arrangement.import_audio",
+            params={
+                "track_index": 2,
+                "file_path": "/tmp/vocal.wav",
+                "start_time": 12.0,
+            },
+            id="arrangement-import-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "arrangement-import-1"
+        assert resp.result == {
+            "track_index": 2,
+            "clip_index": 2,
+            "name": "vocal",
+            "file_path": "/tmp/vocal.wav",
+            "start_time": 12.0,
+            "length": 8.5,
+            "is_audio_clip": True,
+        }
+
+        await conn.disconnect()
+
     async def test_clip_loop_payload_via_tcp(self, tcp_server) -> None:
         port, server, logs = tcp_server
         conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
@@ -471,6 +522,35 @@ class TestFullRoundTrip:
             "loop_start": 0.0,
             "loop_end": 4.0,
             "looping": True,
+        }
+
+        await conn.disconnect()
+
+    async def test_clip_audio_import_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="clip.import_audio",
+            params={
+                "track_index": 1,
+                "clip_slot_index": 3,
+                "file_path": "/tmp/drums.wav",
+            },
+            id="clip-import-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "clip-import-1"
+        assert resp.result == {
+            "track_index": 1,
+            "clip_slot_index": 3,
+            "name": "drums",
+            "file_path": "/tmp/drums.wav",
+            "length": 6.5,
+            "is_audio_clip": True,
         }
 
         await conn.disconnect()

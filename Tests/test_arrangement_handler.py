@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -103,6 +104,14 @@ class _ArrangementTrack(_Track):
             raise RuntimeError("track does not accept MIDI clips")
         self.arrangement_clips.append(
             _ArrangementClip("New MIDI Clip", start_time, length, audio=False)
+        )
+        self._sort_arrangement_clips()
+
+    def create_audio_clip(self, file_path: str, start_time: float) -> None:
+        if not self.has_audio_input:
+            raise RuntimeError("track does not accept audio clips")
+        self.arrangement_clips.append(
+            _ArrangementClip(Path(file_path).stem, start_time, 9.25, audio=True)
         )
         self._sort_arrangement_clips()
 
@@ -253,6 +262,85 @@ class TestCreateArrangementClip:
         with pytest.raises(InvalidParamsError, match="does not accept MIDI clips"):
             arrangement_handler.handle_create_clip(
                 {"track_index": 2, "start_time": 8.0, "length": 4.0}
+            )
+
+
+class TestImportAudioToArrangement:
+    def test_success_on_audio_track(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "vocal.wav"
+        file_path.write_bytes(b"RIFF")
+
+        result = arrangement_handler.handle_import_audio(
+            {
+                "track_index": 2,
+                "file_path": str(file_path),
+                "start_time": 12.0,
+            }
+        )
+
+        assert result == {
+            "track_index": 2,
+            "clip_index": 2,
+            "name": "vocal",
+            "file_path": str(file_path),
+            "start_time": 12.0,
+            "length": 9.25,
+            "is_audio_clip": True,
+        }
+        assert len(arrangement_song.tracks[1].arrangement_clips) == 2
+
+    def test_rejects_midi_only_track(
+        self,
+        arrangement_handler: ArrangementHandler,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "vocal.wav"
+        file_path.write_bytes(b"RIFF")
+
+        with pytest.raises(InvalidParamsError, match="does not accept audio clips"):
+            arrangement_handler.handle_import_audio(
+                {
+                    "track_index": 1,
+                    "file_path": str(file_path),
+                    "start_time": 8.0,
+                }
+            )
+
+    def test_rejects_missing_file(
+        self,
+        arrangement_handler: ArrangementHandler,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "missing.wav"
+
+        with pytest.raises(NotFoundError, match="File does not exist"):
+            arrangement_handler.handle_import_audio(
+                {
+                    "track_index": 2,
+                    "file_path": str(file_path),
+                    "start_time": 8.0,
+                }
+            )
+
+    def test_rejects_malformed_file_path(
+        self,
+        arrangement_handler: ArrangementHandler,
+    ) -> None:
+        with pytest.raises(
+            InvalidParamsError,
+            match="absolute local filesystem path",
+        ):
+            arrangement_handler.handle_import_audio(
+                {
+                    "track_index": 2,
+                    "file_path": "audio/vocal.wav",
+                    "start_time": 8.0,
+                }
             )
 
 

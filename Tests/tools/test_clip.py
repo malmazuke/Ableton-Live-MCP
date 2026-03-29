@@ -28,6 +28,7 @@ from mcp_ableton.tools.clip import (
     NotesAddedResult,
     NotesRemovedResult,
     NotesSetResult,
+    SessionAudioImportResult,
     add_notes_to_clip,
     create_clip,
     delete_clip,
@@ -36,6 +37,7 @@ from mcp_ableton.tools.clip import (
     get_clip_automation,
     get_clip_info,
     get_clip_notes,
+    import_audio_to_session,
     remove_notes,
     set_clip_automation,
     set_clip_color,
@@ -53,6 +55,7 @@ TOOL_NAMES = [
     "fire_clip",
     "stop_clip",
     "get_clip_info",
+    "import_audio_to_session",
     "set_clip_loop",
     "set_clip_color",
     "get_clip_notes",
@@ -130,6 +133,15 @@ CLIP_COLOR_RESULT = {
     "color_index": 17,
 }
 
+SESSION_AUDIO_IMPORT_RESULT = {
+    "track_index": 2,
+    "clip_slot_index": 3,
+    "name": "beat",
+    "file_path": "/tmp/beat.wav",
+    "length": 7.5,
+    "is_audio_clip": True,
+}
+
 CLIP_AUTOMATION_RESULT = {
     "track_index": 1,
     "clip_slot_index": 2,
@@ -191,6 +203,13 @@ class TestToolContracts:
         props = tool.parameters["properties"]
         assert props["color_index"]["minimum"] == 0
 
+    def test_import_audio_to_session_schema(self) -> None:
+        tool = self._get_tool("import_audio_to_session")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+        assert props["clip_slot_index"]["minimum"] == 1
+        assert props["file_path"]["type"] == "string"
+
     def test_set_clip_automation_schema(self) -> None:
         tool = self._get_tool("set_clip_automation")
         props = tool.parameters["properties"]
@@ -237,6 +256,11 @@ class TestInputValidation:
         model = self._arg_model("set_clip_color")
         with pytest.raises(ValidationError):
             model(track_index=1, clip_slot_index=1, color_index=-1)
+
+    def test_import_audio_to_session_rejects_relative_file_path(self) -> None:
+        model = self._arg_model("import_audio_to_session")
+        with pytest.raises(ValidationError):
+            model(track_index=1, clip_slot_index=1, file_path="samples/beat.wav")
 
     def test_set_clip_automation_rejects_empty_point_list(self) -> None:
         model = self._arg_model("set_clip_automation")
@@ -849,6 +873,57 @@ class TestDeleteDuplicateFireStop:
         assert mock_connection.send_command.call_args[0][0].command == "clip.stop"
 
 
+class TestImportAudioToSession:
+    async def test_import_audio_to_session(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "beat.wav"
+        file_path.write_bytes(b"RIFF")
+        response_result = dict(SESSION_AUDIO_IMPORT_RESULT)
+        response_result["file_path"] = str(file_path)
+        mock_connection.send_command.return_value = _ok_response(response_result)
+
+        result = await import_audio_to_session(
+            ctx=mock_context,
+            track_index=2,
+            clip_slot_index=3,
+            file_path=str(file_path),
+        )
+
+        assert isinstance(result, SessionAudioImportResult)
+        assert result.clip_slot_index == 3
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "clip.import_audio"
+        assert req.params == {
+            "track_index": 2,
+            "clip_slot_index": 3,
+            "file_path": str(file_path),
+        }
+
+    async def test_import_audio_to_session_raises_on_error(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "missing.wav"
+        mock_connection.send_command.return_value = _error_response(
+            code="NOT_FOUND",
+            message=f"File does not exist: {file_path}",
+        )
+
+        with pytest.raises(CommandError, match="NOT_FOUND"):
+            await import_audio_to_session(
+                ctx=mock_context,
+                track_index=1,
+                clip_slot_index=1,
+                file_path=str(file_path),
+            )
+
+
 class TestResponseModels:
     def test_clip_automation_accepts_valid(self) -> None:
         automation = ClipAutomationResult.model_validate(CLIP_AUTOMATION_RESULT)
@@ -867,3 +942,7 @@ class TestResponseModels:
     def test_clip_info_accepts_valid(self) -> None:
         c = ClipInfo.model_validate(CLIP_INFO_RESULT)
         assert c.name == "Kick"
+
+    def test_session_audio_import_result_accepts_valid(self) -> None:
+        result = SessionAudioImportResult.model_validate(SESSION_AUDIO_IMPORT_RESULT)
+        assert result.is_audio_clip is True
