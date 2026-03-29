@@ -524,8 +524,12 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `search_browser` | `browser.search` |
 | `set_track_volume` | `mixer.set_track_volume` |
 | `set_track_pan` | `mixer.set_track_pan` |
+| `get_return_tracks` | `mixer.get_return_tracks` |
+| `set_send_level` | `mixer.set_send_level` |
 | `get_master_info` | `mixer.get_master_info` |
 | `set_master_volume` | `mixer.set_master_volume` |
+| `set_return_volume` | `mixer.set_return_volume` |
+| `set_return_pan` | `mixer.set_return_pan` |
 
 ### Threading model (same as competitors, proven pattern)
 

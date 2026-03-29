@@ -100,6 +100,25 @@ class _MixerHandler:
             "pan": 0.0,
         }
 
+    def handle_get_return_tracks(self, params):
+        return {
+            "return_tracks": [
+                {
+                    "return_index": 1,
+                    "name": "A Return",
+                    "volume": 0.61,
+                    "pan": -0.15,
+                }
+            ]
+        }
+
+    def handle_set_send_level(self, params):
+        return {
+            "track_index": params["track_index"],
+            "send_index": params["send_index"],
+            "level": params["level"],
+        }
+
 
 class _ArrangementHandler:
     def handle_get_clips(self, params):
@@ -315,6 +334,52 @@ class TestFullRoundTrip:
             "name": "Master",
             "volume": 0.88,
             "pan": 0.0,
+        }
+
+        await conn.disconnect()
+
+    async def test_return_tracks_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(command="mixer.get_return_tracks", id="mixer-returns-1")
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "mixer-returns-1"
+        assert resp.result is not None
+        assert resp.result == {
+            "return_tracks": [
+                {
+                    "return_index": 1,
+                    "name": "A Return",
+                    "volume": 0.61,
+                    "pan": -0.15,
+                }
+            ]
+        }
+
+        await conn.disconnect()
+
+    async def test_set_send_level_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        req = CommandRequest(
+            command="mixer.set_send_level",
+            params={"track_index": 2, "send_index": 1, "level": 0.37},
+            id="mixer-send-1",
+        )
+        resp = await conn.send_command(req)
+
+        assert resp.status == "ok"
+        assert resp.id == "mixer-send-1"
+        assert resp.result == {
+            "track_index": 2,
+            "send_index": 1,
+            "level": 0.37,
         }
 
         await conn.disconnect()
