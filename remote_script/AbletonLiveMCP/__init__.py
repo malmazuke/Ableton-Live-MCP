@@ -50,6 +50,7 @@ class AbletonLiveMCP(ControlSurface):
 
     def _register_handlers(self) -> None:
         """Register command handlers with the dispatcher."""
+        from .handlers.arrangement import ArrangementHandler
         from .handlers.browser import BrowserHandler
         from .handlers.clip import ClipHandler
         from .handlers.device import DeviceHandler
@@ -61,6 +62,7 @@ class AbletonLiveMCP(ControlSurface):
         self._dispatcher.register("track", TrackHandler(self))
         self._dispatcher.register("device", DeviceHandler(self))
         self._dispatcher.register("clip", ClipHandler(self))
+        self._dispatcher.register("arrangement", ArrangementHandler(self))
         self._dispatcher.register("browser", BrowserHandler(self))
         self._dispatcher.register("mixer", MixerHandler(self))
 

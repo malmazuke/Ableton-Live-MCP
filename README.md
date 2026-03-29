@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml)
 
-> **🚧 Work in Progress** — Ableton Live MCP is usable today for the current Phase 1 tool surface: **session/transport**, **track management**, **session clip**, **MIDI note**, **browser**, **device/parameter**, and **basic mixer** tools are implemented. More domains are still in flight. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
+> **🚧 Work in Progress** — Ableton Live MCP is usable today for the current shipped tool surface: **session/transport**, **track management**, **session clip**, **MIDI note**, **arrangement clip**, **browser**, **device/parameter**, and **basic mixer** tools are implemented. More domains are still in flight. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
 
 Control Ableton Live with AI. Ask your AI assistant to create tracks, add clips, tweak devices, mix — anything you'd normally do by hand in Ableton.
 
@@ -170,7 +170,7 @@ troubleshooting guide.
 
 ## Current status
 
-The communication layer between the MCP server and Ableton's Remote Script is built and tested. Phase 1 now includes transport/session, track management, session clips, MIDI notes, browser navigation, device parameters, and basic mixer control. Remaining work focuses on the rest of the roadmap such as arrangement, scenes, and extended mixing.
+The communication layer between the MCP server and Ableton's Remote Script is built and tested. The current implementation now includes transport/session, track management, session clips, MIDI notes, arrangement clips, browser navigation, device parameters, and basic mixer control. Remaining work focuses on the rest of the roadmap such as scenes and extended mixing.
 
 See the [project board](https://github.com/users/malmazuke/projects/1) for detailed progress and planned work.
 
