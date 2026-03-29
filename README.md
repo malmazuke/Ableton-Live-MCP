@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml)
 
-> **🚧 Work in Progress** — This project is in early development. The MCP server and Remote Script can talk over TCP; **session/transport**, **track management**, **session clip**, **MIDI note**, **browser**, and **device/parameter** MCP tools are implemented, with more domains coming. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
+> **🚧 Work in Progress** — This project is in early development. The MCP server and Remote Script can talk over TCP; **session/transport**, **track management**, **session clip**, **MIDI note**, **browser**, **device/parameter**, and **basic mixer** MCP tools are implemented, with more domains coming. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
 
 Control Ableton Live with AI. Ask your AI assistant to create tracks, add clips, tweak devices, mix — anything you'd normally do by hand in Ableton.
 
@@ -163,7 +163,7 @@ For more detailed instructions, see [docs/installation.md](docs/installation.md)
 
 ## Current status
 
-The communication layer between the MCP server and Ableton's Remote Script is built and tested. What's next is implementing the actual tools — track creation, clip manipulation, device control, mixing, and more.
+The communication layer between the MCP server and Ableton's Remote Script is built and tested. Phase 1 now includes transport/session, track management, session clips, MIDI notes, browser navigation, device parameters, and basic mixer control. Remaining work focuses on the rest of the roadmap such as arrangement, scenes, and extended mixing.
 
 See the [project board](https://github.com/users/malmazuke/projects/1) for detailed progress and planned work.
 
