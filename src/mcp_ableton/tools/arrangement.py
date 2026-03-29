@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath, PureWindowsPath
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.server.fastmcp import Context  # noqa: TCH002
 from pydantic import AfterValidator, BaseModel, Field
 
 from mcp_ableton._app import mcp
 from mcp_ableton.protocol import CommandRequest
+from mcp_ableton.tools.clip import (
+    ClipNote,
+    NoteInput,
+    _normalize_note_inputs,
+)
 
 if TYPE_CHECKING:
     from mcp_ableton.connection import AbletonConnection
@@ -283,19 +288,203 @@ async def import_audio_to_arrangement(
     return ArrangementAudioImportResult.model_validate(response.result)
 
 
+class ArrangementClipNotesResult(BaseModel):
+    """All MIDI notes currently in an arrangement clip."""
+
+    track_index: int
+    clip_index: int
+    notes: list[ClipNote]
+    count: int
+
+
+class ArrangementNotesAddedResult(BaseModel):
+    """Result of ``add_notes_to_arrangement_clip``."""
+
+    track_index: int
+    clip_index: int
+    added_count: int
+    note_ids: list[int]
+
+
+class ArrangementNotesSetResult(BaseModel):
+    """Result of ``set_arrangement_clip_notes``."""
+
+    track_index: int
+    clip_index: int
+    removed_count: int
+    added_count: int
+    note_ids: list[int]
+
+
+class ArrangementNotesRemovedResult(BaseModel):
+    """Result of ``remove_arrangement_clip_notes``."""
+
+    track_index: int
+    clip_index: int
+    removed_count: int
+
+
+@mcp.tool()
+async def get_arrangement_clip_notes(
+    ctx: Context,
+    track_index: TrackIndex,
+    clip_index: ClipIndex,
+) -> ArrangementClipNotesResult:
+    """Get all MIDI notes from an arrangement clip."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.get_notes",
+        params={
+            "track_index": track_index,
+            "clip_index": clip_index,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ArrangementClipNotesResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def add_notes_to_arrangement_clip(
+    ctx: Context,
+    track_index: TrackIndex,
+    clip_index: ClipIndex,
+    notes: Annotated[
+        list[NoteInput],
+        Field(
+            description=(
+                "Notes to add. Each note may be a lean array "
+                "[pitch, start_time, duration, velocity] or an object with "
+                "pitch/start_time/duration/velocity plus optional mute, "
+                "probability, and velocity_deviation."
+            ),
+            min_length=1,
+        ),
+    ],
+) -> ArrangementNotesAddedResult:
+    """Add MIDI notes to an arrangement clip."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.add_notes",
+        params={
+            "track_index": track_index,
+            "clip_index": clip_index,
+            "notes": _normalize_note_inputs(notes),
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ArrangementNotesAddedResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def set_arrangement_clip_notes(
+    ctx: Context,
+    track_index: TrackIndex,
+    clip_index: ClipIndex,
+    notes: Annotated[
+        list[NoteInput],
+        Field(
+            description=(
+                "Replacement note set. Accepts lean arrays or note objects. "
+                "An empty list clears all notes from the clip."
+            ),
+        ),
+    ],
+) -> ArrangementNotesSetResult:
+    """Replace all MIDI notes in an arrangement clip."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.set_notes",
+        params={
+            "track_index": track_index,
+            "clip_index": clip_index,
+            "notes": _normalize_note_inputs(notes),
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ArrangementNotesSetResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def remove_arrangement_clip_notes(
+    ctx: Context,
+    track_index: TrackIndex,
+    clip_index: ClipIndex,
+    from_pitch: Annotated[
+        int,
+        Field(
+            description="Lowest pitch in the removal region (inclusive).",
+            ge=0,
+            le=127,
+        ),
+    ] = 0,
+    pitch_span: Annotated[
+        int,
+        Field(
+            description="Pitch span from from_pitch. 128 covers the full MIDI range.",
+            ge=1,
+            le=128,
+        ),
+    ] = 128,
+    from_time: Annotated[
+        float,
+        Field(
+            description="Start beat of the removal region (inclusive).",
+            ge=0.0,
+        ),
+    ] = 0.0,
+    time_span: Annotated[
+        float | None,
+        Field(
+            description=(
+                "Length of the time region in beats. When omitted, notes are "
+                "removed from from_time onward."
+            ),
+            gt=0.0,
+        ),
+    ] = None,
+) -> ArrangementNotesRemovedResult:
+    """Remove notes from an arrangement clip by pitch/time range."""
+    connection = _get_connection(ctx)
+    params: dict[str, Any] = {
+        "track_index": track_index,
+        "clip_index": clip_index,
+        "from_pitch": from_pitch,
+        "pitch_span": pitch_span,
+        "from_time": from_time,
+    }
+    if time_span is not None:
+        params["time_span"] = time_span
+
+    request = CommandRequest(command="arrangement.remove_notes", params=params)
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return ArrangementNotesRemovedResult.model_validate(response.result)
+
+
 __all__ = [
     "ArrangementAudioImportResult",
     "ArrangementClipCreatedResult",
     "ArrangementClipInfo",
     "ArrangementClipMovedResult",
+    "ArrangementClipNotesResult",
     "ArrangementClipsResult",
     "ArrangementLengthResult",
     "ArrangementLoopResult",
+    "ArrangementNotesAddedResult",
+    "ArrangementNotesRemovedResult",
+    "ArrangementNotesSetResult",
     "AudioFilePath",
+    "add_notes_to_arrangement_clip",
     "create_arrangement_clip",
+    "get_arrangement_clip_notes",
     "get_arrangement_clips",
     "get_arrangement_length",
     "import_audio_to_arrangement",
     "move_arrangement_clip",
+    "remove_arrangement_clip_notes",
+    "set_arrangement_clip_notes",
     "set_arrangement_loop",
 ]

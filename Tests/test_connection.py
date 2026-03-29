@@ -7,7 +7,7 @@ import asyncio
 import pytest
 
 from mcp_ableton.connection import STREAM_LIMIT, AbletonConnection
-from mcp_ableton.protocol import CommandRequest
+from mcp_ableton.protocol import CommandRequest, CommandResponse
 
 
 @pytest.fixture
@@ -249,3 +249,199 @@ class TestPing:
             await conn.connect()
             assert await conn.ping() is False
             await conn.disconnect()
+
+
+class TestConcurrency:
+    """Tests for concurrent send_command calls with ID correlation."""
+
+    async def test_concurrent_sends_correct_correlation(self, echo_server) -> None:
+        """Multiple concurrent sends each receive their own response."""
+        server, port = await echo_server()
+        async with server:
+            conn = AbletonConnection(host="127.0.0.1", port=port)
+            await conn.connect()
+
+            requests = [
+                CommandRequest(command=f"test.concurrent_{i}", id=f"cc-{i}")
+                for i in range(10)
+            ]
+            responses = await asyncio.gather(
+                *(conn.send_command(req) for req in requests)
+            )
+
+            for i, resp in enumerate(responses):
+                assert resp.status == "ok"
+                assert resp.id == f"cc-{i}"
+                assert resp.result == {"echo": f"test.concurrent_{i}"}
+
+            await conn.disconnect()
+
+    async def test_out_of_order_responses(self) -> None:
+        """Responses arriving in reverse order are correctly correlated."""
+        request_count = 3
+
+        async def reverse_handler(
+            reader: asyncio.StreamReader,
+            writer: asyncio.StreamWriter,
+        ) -> None:
+            try:
+                lines: list[bytes] = []
+                for _ in range(request_count):
+                    line = await reader.readuntil(b"\n")
+                    lines.append(line)
+                for line in reversed(lines):
+                    req = CommandRequest.from_line(line)
+                    resp = CommandResponse(
+                        status="ok",
+                        result={"echo": req.command},
+                        id=req.id,
+                    )
+                    writer.write(resp.to_line())
+                await writer.drain()
+                await reader.read()
+            except (asyncio.IncompleteReadError, ConnectionError):
+                pass
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+        server = await asyncio.start_server(reverse_handler, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        async with server:
+            conn = AbletonConnection(host="127.0.0.1", port=port)
+            await conn.connect()
+
+            requests = [
+                CommandRequest(command=f"test.rev_{i}", id=f"rev-{i}")
+                for i in range(request_count)
+            ]
+            responses = await asyncio.gather(
+                *(conn.send_command(req) for req in requests)
+            )
+
+            for i, resp in enumerate(responses):
+                assert resp.id == f"rev-{i}"
+                assert resp.result == {"echo": f"test.rev_{i}"}
+
+            await conn.disconnect()
+
+
+class TestTimeoutCleanup:
+    """Verify that timed-out requests are cleaned out of _pending."""
+
+    async def test_pending_cleaned_on_timeout(self) -> None:
+        async def silent_handler(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            await reader.read()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(silent_handler, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        async with server:
+            conn = AbletonConnection(host="127.0.0.1", port=port, timeout=0.2)
+            await conn.connect()
+
+            req = CommandRequest(command="hang", id="pending-cleanup")
+            with pytest.raises(TimeoutError):
+                await conn.send_command(req)
+
+            assert "pending-cleanup" not in conn._pending
+            assert len(conn._pending) == 0
+
+            await conn.disconnect()
+
+
+class TestReaderLifecycle:
+    """Tests for the background reader task lifecycle."""
+
+    async def test_reader_task_started_on_connect(self, echo_server) -> None:
+        server, port = await echo_server()
+        async with server:
+            conn = AbletonConnection(host="127.0.0.1", port=port)
+            assert conn._reader_task is None
+            await conn.connect()
+            assert conn._reader_task is not None
+            assert not conn._reader_task.done()
+            await conn.disconnect()
+
+    async def test_reader_task_stopped_on_disconnect(self, echo_server) -> None:
+        server, port = await echo_server()
+        async with server:
+            conn = AbletonConnection(host="127.0.0.1", port=port)
+            await conn.connect()
+            reader_task = conn._reader_task
+            assert reader_task is not None
+
+            await conn.disconnect()
+            assert conn._reader_task is None
+            assert reader_task.done()
+
+    async def test_reader_handles_connection_close(self) -> None:
+        """When the server closes, pending futures get ConnectionError."""
+        gate = asyncio.Event()
+
+        async def close_on_signal(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            await gate.wait()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(close_on_signal, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        async with server:
+            conn = AbletonConnection(host="127.0.0.1", port=port, timeout=5.0)
+            await conn.connect()
+
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[CommandResponse] = loop.create_future()
+            conn._pending["orphan-1"] = future
+
+            gate.set()
+            with pytest.raises(ConnectionError):
+                await asyncio.wait_for(future, timeout=2.0)
+
+            assert len(conn._pending) == 0
+            await conn.disconnect()
+
+    async def test_new_reader_task_after_reconnect(self, echo_server) -> None:
+        """Reconnecting starts a fresh reader task."""
+        server, port = await echo_server()
+        async with server:
+            conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+            await conn.connect()
+            old_task = conn._reader_task
+
+            await conn._reconnect()
+            new_task = conn._reader_task
+
+            assert new_task is not None
+            assert new_task is not old_task
+            assert old_task is not None and old_task.done()
+            assert not new_task.done()
+
+            await conn.disconnect()
+
+    async def test_pending_rejected_on_disconnect(self, echo_server) -> None:
+        """Outstanding futures are rejected with ConnectionError on disconnect."""
+        server, port = await echo_server()
+        async with server:
+            conn = AbletonConnection(host="127.0.0.1", port=port)
+            await conn.connect()
+
+            loop = asyncio.get_running_loop()
+            f1: asyncio.Future[CommandResponse] = loop.create_future()
+            f2: asyncio.Future[CommandResponse] = loop.create_future()
+            conn._pending["d-1"] = f1
+            conn._pending["d-2"] = f2
+
+            await conn.disconnect()
+
+            assert f1.done()
+            assert f2.done()
+            with pytest.raises(ConnectionError):
+                f1.result()
+            with pytest.raises(ConnectionError):
+                f2.result()
