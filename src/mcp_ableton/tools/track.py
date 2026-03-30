@@ -31,6 +31,10 @@ class TrackInfo(BaseModel):
     pan: float
     device_names: list[str]
     clip_slot_has_clip: list[bool]
+    is_foldable: bool
+    fold_state: bool | None
+    is_grouped: bool
+    group_track_index: int | None
 
 
 class TrackCreatedResult(BaseModel):
@@ -58,6 +62,13 @@ class TrackUpdatedResult(BaseModel):
 
     track_scope: TrackScope
     track_index: int | None
+
+
+class TrackFoldResult(BaseModel):
+    """Result of ``fold_group``."""
+
+    track_index: int
+    folded: bool
 
 
 def _validate_track_scope_and_index(
@@ -417,6 +428,32 @@ async def duplicate_track(
 
 
 @mcp.tool()
+async def fold_group(
+    ctx: Context,
+    track_index: Annotated[
+        int,
+        Field(
+            description="1-based index of the target group track.",
+            ge=1,
+        ),
+    ],
+    folded: Annotated[
+        bool,
+        Field(description="Whether the group track should be folded."),
+    ],
+) -> TrackFoldResult:
+    """Fold or unfold an existing group track."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="track.fold_group",
+        params={"track_index": track_index, "folded": folded},
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return TrackFoldResult.model_validate(response.result)
+
+
+@mcp.tool()
 async def set_track_name(
     ctx: Context,
     name: Annotated[
@@ -540,6 +577,7 @@ __all__ = [
     "TrackCreatedResult",
     "TrackDeletedResult",
     "TrackDuplicatedResult",
+    "TrackFoldResult",
     "TrackInfo",
     "TrackInputRoutingResult",
     "TrackOutputRoutingResult",
@@ -550,6 +588,7 @@ __all__ = [
     "create_midi_track",
     "delete_track",
     "duplicate_track",
+    "fold_group",
     "get_available_routing",
     "get_track_info",
     "get_track_routing",

@@ -49,10 +49,19 @@ class _Track:
         supports_mute: bool = True,
         supports_solo: bool = True,
         supports_arm: bool = True,
+        is_foldable: bool = False,
+        fold_state: bool = False,
+        group_track: _Track | None = None,
     ) -> None:
         self.name = name
         self.has_audio_input = audio
         self.has_midi_input = midi
+        self.is_foldable = is_foldable
+        self.is_grouped = group_track is not None
+        if is_foldable:
+            self.fold_state = fold_state
+        if group_track is not None:
+            self.group_track = group_track
         if supports_mute:
             self.mute = False
         if supports_solo:
@@ -264,6 +273,10 @@ class TestGetInfo:
         assert result["is_midi_track"] is True
         assert result["device_names"] == ["Device A"]
         assert result["clip_slot_has_clip"] == [False, True]
+        assert result["is_foldable"] is False
+        assert result["fold_state"] is None
+        assert result["is_grouped"] is False
+        assert result["group_track_index"] is None
 
     def test_returns_return_track_info(self, handler: TrackHandler) -> None:
         result = handler.handle_get_info({"track_scope": "return", "track_index": 1})
@@ -272,6 +285,8 @@ class TestGetInfo:
         assert result["track_index"] == 1
         assert result["device_names"] == []
         assert result["clip_slot_has_clip"] == []
+        assert result["is_foldable"] is False
+        assert result["fold_state"] is None
 
     def test_returns_master_track_info(self, handler: TrackHandler) -> None:
         result = handler.handle_get_info({"track_scope": "master"})
@@ -280,6 +295,21 @@ class TestGetInfo:
         assert result["track_index"] is None
         assert result["device_names"] == []
         assert result["clip_slot_has_clip"] == []
+        assert result["group_track_index"] is None
+
+    def test_returns_group_metadata_for_child_track(self) -> None:
+        group_track = _Track("Drums", is_foldable=True, fold_state=True)
+        child_track = _Track("Kick", group_track=group_track)
+        handler = TrackHandler(
+            _FakeControlSurface(_FakeSong([group_track, child_track]))
+        )
+
+        result = handler.handle_get_info({"track_index": 2})
+
+        assert result["is_foldable"] is False
+        assert result["fold_state"] is None
+        assert result["is_grouped"] is True
+        assert result["group_track_index"] == 1
 
     def test_raises_not_found(self, handler: TrackHandler) -> None:
         with pytest.raises(NotFoundError, match="Track 99"):
@@ -552,6 +582,26 @@ class TestSetters:
         with pytest.raises(InvalidParamsError, match="does not support solo"):
             handler.handle_set_solo({"track_scope": "master", "solo": True})
 
+    def test_fold_group_sets_fold_state(self) -> None:
+        group_track = _Track("Group", is_foldable=True, fold_state=False)
+        song = _FakeSong([group_track, _Track("Child", group_track=group_track)])
+        handler = TrackHandler(_FakeControlSurface(song))
+
+        result = handler.handle_fold_group({"track_index": 1, "folded": True})
+
+        assert result == {"track_index": 1, "folded": True}
+        assert song.tracks[0].fold_state is True
+
+    def test_fold_group_rejects_non_foldable_track(self, handler: TrackHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="foldable group track"):
+            handler.handle_fold_group({"track_index": 1, "folded": True})
+
+    def test_fold_group_rejects_non_main_scope(self, handler: TrackHandler) -> None:
+        with pytest.raises(InvalidParamsError, match="only supports main tracks"):
+            handler.handle_fold_group(
+                {"track_scope": "return", "track_index": 1, "folded": True}
+            )
+
 
 class TestDispatcherNotFoundIntegration:
     def test_track_get_info_not_found_via_dispatcher(self, song: _FakeSong) -> None:
@@ -597,3 +647,14 @@ class TestDispatcherNotFoundIntegration:
         assert resp["status"] == "error"
         assert resp["error"]["code"] == "INVALID_PARAMS"
         assert "does not support mute" in resp["error"]["message"]
+
+    def test_track_fold_group_success_via_dispatcher(self) -> None:
+        group_track = _Track("Group", is_foldable=True, fold_state=False)
+        song = _FakeSong([group_track, _Track("Child", group_track=group_track)])
+        d = Dispatcher(_FakeControlSurface(song))
+        d.register("track", TrackHandler(_FakeControlSurface(song)))
+
+        resp = d.dispatch("track.fold_group", {"track_index": 1, "folded": True}, "r4")
+
+        assert resp["status"] == "ok"
+        assert resp["result"] == {"track_index": 1, "folded": True}

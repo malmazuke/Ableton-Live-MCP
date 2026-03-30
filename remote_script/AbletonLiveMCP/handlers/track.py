@@ -18,6 +18,13 @@ TRACK_SCOPES = {"main", "return", "master"}
 class TrackHandler(BaseHandler):
     """Handle track CRUD and property commands."""
 
+    def _find_main_track_index(self, target_track: Any) -> int | None:
+        """Return the 1-based main-track index for ``target_track`` if present."""
+        for index, candidate in enumerate(self._song.tracks, start=1):
+            if candidate is target_track:
+                return index
+        return None
+
     def _track_label(self, track_scope: str, track_index: int | None) -> str:
         """Return a human-readable label for the resolved track."""
         if track_scope == "master":
@@ -257,6 +264,27 @@ class TrackHandler(BaseHandler):
             f"Track {track_index} has no {option_label} with identifier '{identifier}'"
         )
 
+    def _serialize_group_track_info(self, track: Any) -> dict[str, Any]:
+        """Return grouping/folding metadata for a track."""
+        is_foldable = self._read_bool_attribute(track, "is_foldable")
+        fold_state: bool | None = None
+        if is_foldable:
+            fold_state = self._read_bool_attribute(track, "fold_state")
+
+        is_grouped = self._read_bool_attribute(track, "is_grouped")
+        group_track_index: int | None = None
+        if is_grouped:
+            group_track = self._read_track_value(track, "group_track")
+            if group_track is not None:
+                group_track_index = self._find_main_track_index(group_track)
+
+        return {
+            "is_foldable": is_foldable,
+            "fold_state": fold_state,
+            "is_grouped": is_grouped,
+            "group_track_index": group_track_index,
+        }
+
     def handle_get_info(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return a structured snapshot of one track (read-only)."""
 
@@ -290,6 +318,7 @@ class TrackHandler(BaseHandler):
                 "pan": float(track.mixer_device.panning.value),
                 "device_names": device_names,
                 "clip_slot_has_clip": clip_slot_has_clip,
+                **self._serialize_group_track_info(track),
             }
 
         return self._run_on_main_thread(_read)
@@ -523,6 +552,30 @@ class TrackHandler(BaseHandler):
             return {
                 "track_scope": track_scope,
                 "track_index": track_index,
+            }
+
+        return self._run_on_main_thread(_set)
+
+    def handle_fold_group(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Fold or unfold an existing group track."""
+        folded = params.get("folded")
+        if folded is None or not isinstance(folded, bool):
+            raise InvalidParamsError("'folded' must be a boolean")
+
+        def _set() -> dict[str, Any]:
+            track, track_scope, track_index, _lo = self._resolve_track(params)
+            if track_scope != "main":
+                raise InvalidParamsError("fold_group only supports main tracks")
+            if not self._read_bool_attribute(track, "is_foldable"):
+                raise InvalidParamsError(
+                    f"Track {track_index} is not a foldable group track"
+                )
+
+            label = self._track_label(track_scope, track_index)
+            self._set_track_value(track, "fold_state", folded, label)
+            return {
+                "track_index": track_index,
+                "folded": self._read_bool_attribute(track, "fold_state"),
             }
 
         return self._run_on_main_thread(_set)
