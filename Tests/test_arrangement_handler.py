@@ -81,6 +81,35 @@ class _ArrangementClip:
         self.is_midi_clip = not audio
 
 
+class _TakeLane:
+    def __init__(
+        self,
+        name: str,
+        *,
+        arrangement_clips: list[_ArrangementClip] | None = None,
+    ) -> None:
+        self.name = name
+        self.arrangement_clips = list(arrangement_clips or [])
+        self._sort_arrangement_clips()
+
+    def _sort_arrangement_clips(self) -> None:
+        self.arrangement_clips.sort(
+            key=lambda clip: (clip.start_time, clip.end_time, clip.name)
+        )
+
+    def create_midi_clip(self, start_time: float, length: float) -> None:
+        self.arrangement_clips.append(
+            _ArrangementClip("New MIDI Clip", start_time, length, audio=False)
+        )
+        self._sort_arrangement_clips()
+
+    def create_audio_clip(self, file_path: str, start_time: float) -> None:
+        self.arrangement_clips.append(
+            _ArrangementClip(Path(file_path).stem, start_time, 9.25, audio=True)
+        )
+        self._sort_arrangement_clips()
+
+
 class _CuePoint:
     def __init__(self, name: str, time: float) -> None:
         self.name = name
@@ -95,9 +124,11 @@ class _ArrangementTrack(_Track):
         midi: bool = True,
         audio: bool = False,
         arrangement_clips: list[_ArrangementClip] | None = None,
+        take_lanes: list[_TakeLane] | None = None,
     ) -> None:
         super().__init__(name, midi=midi, audio=audio)
         self.arrangement_clips = list(arrangement_clips or [])
+        self.take_lanes = list(take_lanes or [])
         self._sort_arrangement_clips()
 
     def _sort_arrangement_clips(self) -> None:
@@ -144,6 +175,10 @@ class _ArrangementTrack(_Track):
     def delete_clip(self, clip: _ArrangementClip) -> None:
         self.arrangement_clips.remove(clip)
 
+    def create_take_lane(self) -> None:
+        lane_number = len(self.take_lanes) + 1
+        self.take_lanes.append(_TakeLane(f"Take Lane {lane_number}"))
+
 
 class _ArrangementSong:
     def __init__(self) -> None:
@@ -160,6 +195,12 @@ class _ArrangementSong:
                     _ArrangementClip("Verse", 0.0, 8.0),
                     _ArrangementClip("Hook", 16.0, 4.0),
                 ],
+                take_lanes=[
+                    _TakeLane(
+                        "Comp A",
+                        arrangement_clips=[_ArrangementClip("Take 1", 8.0, 4.0)],
+                    )
+                ],
             ),
             _ArrangementTrack(
                 "Audio 1",
@@ -168,8 +209,16 @@ class _ArrangementSong:
                 arrangement_clips=[
                     _ArrangementClip("Vocal", 4.0, 8.0, audio=True),
                 ],
+                take_lanes=[
+                    _TakeLane(
+                        "Audio Lane",
+                        arrangement_clips=[
+                            _ArrangementClip("vox", 12.0, 8.0, audio=True)
+                        ],
+                    )
+                ],
             ),
-            _ArrangementTrack("MIDI 2", midi=True, arrangement_clips=[]),
+            _ArrangementTrack("MIDI 2", midi=True, arrangement_clips=[], take_lanes=[]),
         ]
         self.cue_points = [
             _CuePoint("Intro", 0.0),
@@ -365,6 +414,193 @@ class TestImportAudioToArrangement:
                 {
                     "track_index": 2,
                     "file_path": "audio/vocal.wav",
+                    "start_time": 8.0,
+                }
+            )
+
+
+class TestTakeLanes:
+    def test_list_take_lanes(self, arrangement_handler: ArrangementHandler) -> None:
+        result = arrangement_handler.handle_get_take_lanes({"track_index": 1})
+
+        assert result == {
+            "track_index": 1,
+            "take_lanes": [
+                {
+                    "take_lane_index": 1,
+                    "name": "Comp A",
+                    "clips": [
+                        {
+                            "clip_index": 1,
+                            "name": "Take 1",
+                            "start_time": 8.0,
+                            "end_time": 12.0,
+                            "length": 4.0,
+                            "is_audio_clip": False,
+                            "is_midi_clip": True,
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def test_create_take_lane_without_name(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        result = arrangement_handler.handle_create_take_lane({"track_index": 1})
+
+        assert result == {
+            "track_index": 1,
+            "take_lane_index": 2,
+            "name": "Take Lane 2",
+        }
+        assert arrangement_song.tracks[0].take_lanes[1].name == "Take Lane 2"
+
+    def test_create_take_lane_with_name(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        result = arrangement_handler.handle_create_take_lane(
+            {"track_index": 1, "name": "  MCP Take Lane  "}
+        )
+
+        assert result == {
+            "track_index": 1,
+            "take_lane_index": 2,
+            "name": "MCP Take Lane",
+        }
+        assert arrangement_song.tracks[0].take_lanes[1].name == "MCP Take Lane"
+
+    def test_rename_take_lane(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        result = arrangement_handler.handle_set_take_lane_name(
+            {
+                "track_index": 1,
+                "take_lane_index": 1,
+                "name": "  Renamed Lane  ",
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "take_lane_index": 1,
+            "name": "Renamed Lane",
+        }
+        assert arrangement_song.tracks[0].take_lanes[0].name == "Renamed Lane"
+
+    def test_create_midi_clip_in_take_lane(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        result = arrangement_handler.handle_create_take_lane_midi_clip(
+            {
+                "track_index": 1,
+                "take_lane_index": 1,
+                "start_time": 16.0,
+                "length": 4.0,
+            }
+        )
+
+        assert result == {
+            "track_index": 1,
+            "take_lane_index": 1,
+            "clip_index": 2,
+            "start_time": 16.0,
+            "length": 4.0,
+            "name": "New MIDI Clip",
+        }
+        assert len(arrangement_song.tracks[0].take_lanes[0].arrangement_clips) == 2
+
+    def test_import_audio_to_take_lane(
+        self,
+        arrangement_handler: ArrangementHandler,
+        arrangement_song: _ArrangementSong,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "vox.wav"
+        file_path.write_bytes(b"RIFF")
+
+        result = arrangement_handler.handle_import_audio_to_take_lane(
+            {
+                "track_index": 2,
+                "take_lane_index": 1,
+                "file_path": str(file_path),
+                "start_time": 24.0,
+            }
+        )
+
+        assert result == {
+            "track_index": 2,
+            "take_lane_index": 1,
+            "clip_index": 2,
+            "name": "vox",
+            "file_path": str(file_path),
+            "start_time": 24.0,
+            "length": 9.25,
+            "is_audio_clip": True,
+        }
+        assert len(arrangement_song.tracks[1].take_lanes[0].arrangement_clips) == 2
+
+    def test_missing_track_raises_not_found(
+        self,
+        arrangement_handler: ArrangementHandler,
+    ) -> None:
+        with pytest.raises(NotFoundError, match="Track 99"):
+            arrangement_handler.handle_get_take_lanes({"track_index": 99})
+
+    def test_missing_take_lane_raises_not_found(
+        self,
+        arrangement_handler: ArrangementHandler,
+    ) -> None:
+        with pytest.raises(NotFoundError, match="Take lane 99"):
+            arrangement_handler.handle_set_take_lane_name(
+                {"track_index": 1, "take_lane_index": 99, "name": "Lane"}
+            )
+
+    def test_blank_name_rejected(
+        self,
+        arrangement_handler: ArrangementHandler,
+    ) -> None:
+        with pytest.raises(InvalidParamsError, match="non-empty string"):
+            arrangement_handler.handle_create_take_lane(
+                {"track_index": 1, "name": "   "}
+            )
+
+    def test_create_midi_clip_rejects_audio_track(
+        self,
+        arrangement_handler: ArrangementHandler,
+    ) -> None:
+        with pytest.raises(InvalidParamsError, match="does not accept MIDI clips"):
+            arrangement_handler.handle_create_take_lane_midi_clip(
+                {
+                    "track_index": 2,
+                    "take_lane_index": 1,
+                    "start_time": 8.0,
+                    "length": 4.0,
+                }
+            )
+
+    def test_import_audio_rejects_midi_track(
+        self,
+        arrangement_handler: ArrangementHandler,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "vox.wav"
+        file_path.write_bytes(b"RIFF")
+
+        with pytest.raises(InvalidParamsError, match="does not accept audio clips"):
+            arrangement_handler.handle_import_audio_to_take_lane(
+                {
+                    "track_index": 1,
+                    "take_lane_index": 1,
+                    "file_path": str(file_path),
                     "start_time": 8.0,
                 }
             )
@@ -666,3 +902,20 @@ class TestDispatcherIntegration:
 
         assert response["status"] == "ok"
         assert response["result"]["locators"][0]["name"] == "Intro"
+
+    def test_arrangement_take_lanes_via_dispatcher(
+        self,
+        arrangement_song: _ArrangementSong,
+    ) -> None:
+        control_surface = _FakeControlSurface(arrangement_song)
+        dispatcher = Dispatcher(control_surface)
+        dispatcher.register("arrangement", ArrangementHandler(control_surface))
+
+        response = dispatcher.dispatch(
+            "arrangement.get_take_lanes",
+            {"track_index": 1},
+            "arr-3",
+        )
+
+        assert response["status"] == "ok"
+        assert response["result"]["take_lanes"][0]["name"] == "Comp A"

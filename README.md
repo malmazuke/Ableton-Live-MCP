@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml)
 
-> **🚧 Work in Progress** — Ableton Live MCP is usable today for the current shipped tool surface: **session/transport/recording with undo/redo**, **track management including explicit main/return/master addressing and routing**, **scene management**, **session clip**, **session and arrangement audio import**, **clip properties, clip automation, and audio clip gain/pitch/warp editing**, **MIDI note**, **arrangement clip and locator**, **browser**, **device/parameter**, **groove pool**, and **mixer tools including sends/returns and return-track control** are implemented. More domains are still in flight. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
+> **🚧 Work in Progress** — Ableton Live MCP is usable today for the current shipped tool surface: **session/transport/recording with undo/redo**, **track management including explicit main/return/master addressing and routing**, **scene management**, **session clip**, **session and arrangement audio import**, **clip properties, clip automation, and audio clip gain/pitch/warp editing**, **MIDI note**, **arrangement clip, take lane, and locator**, **browser**, **device/parameter**, **groove pool**, and **mixer tools including sends/returns and return-track control** are implemented. More domains are still in flight. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
 
 Control Ableton Live with AI. Ask your AI assistant to create tracks, add clips, tweak devices, mix — anything you'd normally do by hand in Ableton.
 
@@ -170,7 +170,7 @@ troubleshooting guide.
 
 ## Current status
 
-The communication layer between the MCP server and Ableton's Remote Script is built and tested. The current implementation now includes transport/session/recording with undo/redo, track management and routing, explicit scoped track addressing for main/return/master info and supported mutations, scene management, session clips, audio file import to session and arrangement, clip loop/color editing, audio clip gain/pitch/warp editing, clip automation read/write, MIDI notes, arrangement clips and locators, browser navigation including plug-ins, device parameters, groove pool access, and mixer control for track volume/pan, sends, return tracks, and master volume. Remaining work focuses on the rest of the roadmap such as broader return/master mutation coverage.
+The communication layer between the MCP server and Ableton's Remote Script is built and tested. The current implementation now includes transport/session/recording with undo/redo, track management and routing, explicit scoped track addressing for main/return/master info and supported mutations, scene management, session clips, audio file import to session and arrangement, clip loop/color editing, audio clip gain/pitch/warp editing, clip automation read/write, MIDI notes, arrangement clips, take lanes, and locators, browser navigation including plug-ins, device parameters, groove pool access, and mixer control for track volume/pan, sends, return tracks, and master volume. Remaining work focuses on the rest of the roadmap such as broader return/master mutation coverage.
 
 See the [project board](https://github.com/users/malmazuke/projects/1) for detailed progress and planned work.
 
@@ -187,7 +187,7 @@ See the [project board](https://github.com/users/malmazuke/projects/1) for detai
 |------|----------|
 | Transport & session | Play, stop, record, set tempo, time signature, loop |
 | Tracks | Broader return/master mutation coverage and existing group-track fold operations |
-| Arrangement clips | Create, move, import, and edit clips in arrangement view |
+| Arrangement clips | Create, move, import, and edit clips in arrangement view, including take lanes |
 | Session clips | Fire, stop, import, and manage clips in session view |
 | Devices & parameters | Load instruments/effects, read and tweak parameters |
 | Scenes | Create, fire, and manage scenes |

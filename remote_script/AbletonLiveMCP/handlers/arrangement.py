@@ -58,6 +58,16 @@ class ArrangementHandler(NoteMixin, BaseHandler):
             raise InvalidParamsError("'clip_index' must be at least 1")
         return raw
 
+    def _require_take_lane_index(self, params: dict[str, Any]) -> int:
+        raw = params.get("take_lane_index")
+        if raw is None:
+            raise InvalidParamsError("'take_lane_index' parameter is required")
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            raise InvalidParamsError("'take_lane_index' must be an integer")
+        if raw < 1:
+            raise InvalidParamsError("'take_lane_index' must be at least 1")
+        return raw
+
     def _require_locator_index(self, params: dict[str, Any]) -> int:
         raw = params.get("locator_index")
         if raw is None:
@@ -154,6 +164,108 @@ class ArrangementHandler(NoteMixin, BaseHandler):
                 )
             )
         return clips
+
+    def _resolve_take_lane(
+        self,
+        track: Any,
+        *,
+        track_index: int,
+        take_lane_index: int,
+    ) -> Any:
+        take_lanes = track.take_lanes
+        take_lane_count = len(take_lanes)
+        if take_lane_index > take_lane_count:
+            raise NotFoundError(
+                "Take lane "
+                f"{take_lane_index} does not exist on track {track_index} "
+                f"(track has {take_lane_count} take lane(s))"
+            )
+        return take_lanes[take_lane_index - 1]
+
+    def _serialize_take_lane_clip(
+        self,
+        clip: Any,
+        *,
+        clip_index: int,
+    ) -> dict[str, Any]:
+        start_time = float(clip.start_time)
+        end_time = float(clip.end_time)
+        return {
+            "clip_index": clip_index,
+            "name": str(clip.name),
+            "start_time": start_time,
+            "end_time": end_time,
+            "length": float(clip.length),
+            "is_audio_clip": bool(clip.is_audio_clip),
+            "is_midi_clip": bool(clip.is_midi_clip),
+        }
+
+    def _serialize_take_lane(
+        self,
+        take_lane: Any,
+        *,
+        take_lane_index: int,
+    ) -> dict[str, Any]:
+        clips = [
+            self._serialize_take_lane_clip(clip, clip_index=clip_index)
+            for clip_index, clip in enumerate(take_lane.arrangement_clips, start=1)
+        ]
+        return {
+            "take_lane_index": take_lane_index,
+            "name": str(take_lane.name),
+            "clips": clips,
+        }
+
+    def _take_lane_signature(
+        self,
+        take_lane: Any,
+    ) -> tuple[str, tuple[tuple[str, float, float, float, bool, bool], ...]]:
+        return (
+            str(take_lane.name),
+            tuple(self._clip_signature(clip) for clip in take_lane.arrangement_clips),
+        )
+
+    def _find_new_take_lane(
+        self,
+        before: list[Any],
+        after: list[Any],
+        *,
+        action: str,
+    ) -> tuple[int, Any]:
+        before_counts = Counter(id(take_lane) for take_lane in before)
+        seen_counts: Counter[int] = Counter()
+        candidates: list[tuple[int, Any]] = []
+
+        for take_lane_index, take_lane in enumerate(after, start=1):
+            take_lane_id = id(take_lane)
+            seen_counts[take_lane_id] += 1
+            if seen_counts[take_lane_id] > before_counts[take_lane_id]:
+                candidates.append((take_lane_index, take_lane))
+
+        if len(candidates) == 1:
+            return candidates[0]
+
+        signature_before_counts = Counter(
+            self._take_lane_signature(take_lane) for take_lane in before
+        )
+        signature_seen_counts: Counter[
+            tuple[str, tuple[tuple[str, float, float, float, bool, bool], ...]]
+        ] = Counter()
+        signature_candidates: list[tuple[int, Any]] = []
+
+        for take_lane_index, take_lane in enumerate(after, start=1):
+            signature = self._take_lane_signature(take_lane)
+            signature_seen_counts[signature] += 1
+            if signature_seen_counts[signature] > signature_before_counts[signature]:
+                signature_candidates.append((take_lane_index, take_lane))
+
+        if not signature_candidates:
+            raise RuntimeError(f"No new take lane appeared after {action} completed")
+        if len(signature_candidates) > 1:
+            raise RuntimeError(
+                f"Could not uniquely identify the take lane after {action}"
+            )
+        return signature_candidates[0]
 
     def _resolve_arrangement_clip(
         self,
@@ -447,6 +559,175 @@ class ArrangementHandler(NoteMixin, BaseHandler):
             )
             return {
                 "track_index": resolved_track_index,
+                "clip_index": clip_index,
+                "name": str(clip.name),
+                "file_path": file_path,
+                "start_time": float(clip.start_time),
+                "length": float(clip.length),
+                "is_audio_clip": bool(clip.is_audio_clip),
+            }
+
+        return self._run_on_main_thread(_import)
+
+    def handle_get_take_lanes(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return all take lanes for one track."""
+        track_index = self._require_track_index(params, "track_index")
+        assert track_index is not None
+
+        def _read() -> dict[str, Any]:
+            track, resolved_track_index, _ = self._resolve_track(track_index)
+            take_lanes = [
+                self._serialize_take_lane(take_lane, take_lane_index=take_lane_index)
+                for take_lane_index, take_lane in enumerate(track.take_lanes, start=1)
+            ]
+            return {
+                "track_index": resolved_track_index,
+                "take_lanes": take_lanes,
+            }
+
+        return self._run_on_main_thread(_read)
+
+    def handle_create_take_lane(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Create a take lane on a track and optionally name it."""
+        track_index = self._require_track_index(params, "track_index")
+        assert track_index is not None
+        name = self._require_locator_name(params, required=False)
+
+        def _create() -> dict[str, Any]:
+            track, resolved_track_index, _ = self._resolve_track(track_index)
+            before = list(track.take_lanes)
+            track.create_take_lane()
+            take_lane_index, take_lane = self._find_new_take_lane(
+                before,
+                list(track.take_lanes),
+                action="create_take_lane",
+            )
+            if name is not None:
+                take_lane.name = name
+            return {
+                "track_index": resolved_track_index,
+                "take_lane_index": take_lane_index,
+                "name": str(take_lane.name),
+            }
+
+        return self._run_on_main_thread(_create)
+
+    def handle_set_take_lane_name(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Rename an existing take lane."""
+        track_index = self._require_track_index(params, "track_index")
+        assert track_index is not None
+        take_lane_index = self._require_take_lane_index(params)
+        name = self._require_locator_name(params)
+        assert name is not None
+
+        def _rename() -> dict[str, Any]:
+            track, resolved_track_index, _ = self._resolve_track(track_index)
+            take_lane = self._resolve_take_lane(
+                track,
+                track_index=resolved_track_index,
+                take_lane_index=take_lane_index,
+            )
+            take_lane.name = name
+            return {
+                "track_index": resolved_track_index,
+                "take_lane_index": take_lane_index,
+                "name": str(take_lane.name),
+            }
+
+        return self._run_on_main_thread(_rename)
+
+    def handle_create_take_lane_midi_clip(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create an empty MIDI clip inside a take lane on a MIDI track."""
+        track_index = self._require_track_index(params, "track_index")
+        assert track_index is not None
+        take_lane_index = self._require_take_lane_index(params)
+        start_time = self._require_arrangement_number(params, "start_time", minimum=0.0)
+        length = self._require_arrangement_number(
+            params,
+            "length",
+            minimum=0.0,
+            exclusive_minimum=True,
+        )
+
+        def _create() -> dict[str, Any]:
+            track, resolved_track_index, _ = self._resolve_track(track_index)
+            if not bool(track.has_midi_input):
+                raise InvalidParamsError(
+                    f"Track {resolved_track_index} does not accept MIDI clips"
+                )
+            take_lane = self._resolve_take_lane(
+                track,
+                track_index=resolved_track_index,
+                take_lane_index=take_lane_index,
+            )
+            before = list(take_lane.arrangement_clips)
+            try:
+                take_lane.create_midi_clip(start_time, length)
+            except Exception as exc:
+                raise InvalidParamsError(
+                    "Unable to create MIDI clip in take lane "
+                    f"{take_lane_index} on track {resolved_track_index}: {exc}"
+                ) from exc
+
+            clip_index, clip = self._find_new_clip(
+                before,
+                list(take_lane.arrangement_clips),
+                action="create_take_lane_midi_clip",
+            )
+            return {
+                "track_index": resolved_track_index,
+                "take_lane_index": take_lane_index,
+                "clip_index": clip_index,
+                "start_time": start_time,
+                "length": length,
+                "name": str(clip.name),
+            }
+
+        return self._run_on_main_thread(_create)
+
+    def handle_import_audio_to_take_lane(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Import an audio file into a take lane on an audio track."""
+        track_index = self._require_track_index(params, "track_index")
+        assert track_index is not None
+        take_lane_index = self._require_take_lane_index(params)
+        file_path = self._require_absolute_file_path(params, "file_path")
+        self._require_existing_file(file_path)
+        start_time = self._require_arrangement_number(params, "start_time", minimum=0.0)
+
+        def _import() -> dict[str, Any]:
+            track, resolved_track_index, _ = self._resolve_track(track_index)
+            if not bool(track.has_audio_input):
+                raise InvalidParamsError(
+                    f"Track {resolved_track_index} does not accept audio clips"
+                )
+            take_lane = self._resolve_take_lane(
+                track,
+                track_index=resolved_track_index,
+                take_lane_index=take_lane_index,
+            )
+            before = list(take_lane.arrangement_clips)
+            try:
+                take_lane.create_audio_clip(file_path, start_time)
+            except Exception as exc:
+                raise InvalidParamsError(
+                    "Unable to import audio clip to take lane "
+                    f"{take_lane_index} on track {resolved_track_index}: {exc}"
+                ) from exc
+
+            clip_index, clip = self._find_new_clip(
+                before,
+                list(take_lane.arrangement_clips),
+                action="import_audio_to_take_lane",
+            )
+            return {
+                "track_index": resolved_track_index,
+                "take_lane_index": take_lane_index,
                 "clip_index": clip_index,
                 "name": str(clip.name),
                 "file_path": file_path,

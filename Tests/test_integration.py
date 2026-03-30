@@ -180,6 +180,64 @@ class _ArrangementHandler:
             ],
         }
 
+    def handle_get_take_lanes(self, params):
+        return {
+            "track_index": params["track_index"],
+            "take_lanes": [
+                {
+                    "take_lane_index": 1,
+                    "name": "Comp A",
+                    "clips": [
+                        {
+                            "clip_index": 1,
+                            "name": "Take 1",
+                            "start_time": 8.0,
+                            "end_time": 12.0,
+                            "length": 4.0,
+                            "is_audio_clip": False,
+                            "is_midi_clip": True,
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def handle_create_take_lane(self, params):
+        return {
+            "track_index": params["track_index"],
+            "take_lane_index": 2,
+            "name": params.get("name", "Take Lane 2"),
+        }
+
+    def handle_set_take_lane_name(self, params):
+        return {
+            "track_index": params["track_index"],
+            "take_lane_index": params["take_lane_index"],
+            "name": params["name"],
+        }
+
+    def handle_create_take_lane_midi_clip(self, params):
+        return {
+            "track_index": params["track_index"],
+            "take_lane_index": params["take_lane_index"],
+            "clip_index": 2,
+            "start_time": params["start_time"],
+            "length": params["length"],
+            "name": "New MIDI Clip",
+        }
+
+    def handle_import_audio_to_take_lane(self, params):
+        return {
+            "track_index": params["track_index"],
+            "take_lane_index": params["take_lane_index"],
+            "clip_index": 2,
+            "name": "vox",
+            "file_path": params["file_path"],
+            "start_time": params["start_time"],
+            "length": 8.5,
+            "is_audio_clip": True,
+        }
+
     def handle_import_audio(self, params):
         return {
             "track_index": params["track_index"],
@@ -896,6 +954,44 @@ class TestFullRoundTrip:
             "start_time": 12.0,
             "length": 8.5,
             "is_audio_clip": True,
+        }
+
+        await conn.disconnect()
+
+    async def test_take_lane_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        resp = await conn.send_command(
+            CommandRequest(
+                command="arrangement.get_take_lanes",
+                params={"track_index": 1},
+                id="take-lanes-1",
+            )
+        )
+
+        assert resp.status == "ok"
+        assert resp.id == "take-lanes-1"
+        assert resp.result == {
+            "track_index": 1,
+            "take_lanes": [
+                {
+                    "take_lane_index": 1,
+                    "name": "Comp A",
+                    "clips": [
+                        {
+                            "clip_index": 1,
+                            "name": "Take 1",
+                            "start_time": 8.0,
+                            "end_time": 12.0,
+                            "length": 4.0,
+                            "is_audio_clip": False,
+                            "is_midi_clip": True,
+                        }
+                    ],
+                }
+            ],
         }
 
         await conn.disconnect()

@@ -36,6 +36,13 @@ ClipIndex = Annotated[
         ge=1,
     ),
 ]
+TakeLaneIndex = Annotated[
+    int,
+    Field(
+        description="1-based index of the take lane on the track.",
+        ge=1,
+    ),
+]
 StartTime = Annotated[
     float,
     Field(
@@ -78,6 +85,18 @@ OptionalLocatorName = (
         Field(
             description=(
                 "Optional locator name applied after creation (non-empty if set)."
+            )
+        ),
+    ]
+    | None
+)
+OptionalTakeLaneName = (
+    Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1),
+        Field(
+            description=(
+                "Optional take-lane name applied after creation (non-empty if set)."
             )
         ),
     ]
@@ -163,6 +182,73 @@ class ArrangementAudioImportResult(BaseModel):
     """Result of ``import_audio_to_arrangement``."""
 
     track_index: int
+    clip_index: int
+    name: str
+    file_path: str
+    start_time: float
+    length: float
+    is_audio_clip: bool
+
+
+class TakeLaneClipInfo(BaseModel):
+    """Arrangement clip metadata returned inside a take lane listing."""
+
+    clip_index: int
+    name: str
+    start_time: float
+    end_time: float
+    length: float
+    is_audio_clip: bool
+    is_midi_clip: bool
+
+
+class TakeLaneInfo(BaseModel):
+    """Serialized take-lane metadata for a single track."""
+
+    take_lane_index: int
+    name: str
+    clips: list[TakeLaneClipInfo]
+
+
+class TakeLanesResult(BaseModel):
+    """Take-lane listing for one track."""
+
+    track_index: int
+    take_lanes: list[TakeLaneInfo]
+
+
+class TakeLaneCreatedResult(BaseModel):
+    """Result of ``create_take_lane``."""
+
+    track_index: int
+    take_lane_index: int
+    name: str
+
+
+class TakeLaneRenamedResult(BaseModel):
+    """Result of ``set_take_lane_name``."""
+
+    track_index: int
+    take_lane_index: int
+    name: str
+
+
+class TakeLaneMidiClipCreatedResult(BaseModel):
+    """Result of ``create_take_lane_midi_clip``."""
+
+    track_index: int
+    take_lane_index: int
+    clip_index: int
+    start_time: float
+    length: float
+    name: str
+
+
+class TakeLaneAudioImportResult(BaseModel):
+    """Result of ``import_audio_to_take_lane``."""
+
+    track_index: int
+    take_lane_index: int
     clip_index: int
     name: str
     file_path: str
@@ -363,6 +449,109 @@ async def import_audio_to_arrangement(
     response = await connection.send_command(request)
     response.raise_on_error()
     return ArrangementAudioImportResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def get_take_lanes(
+    ctx: Context,
+    track_index: TrackIndex,
+) -> TakeLanesResult:
+    """Get all take lanes on a track."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.get_take_lanes",
+        params={"track_index": track_index},
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return TakeLanesResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def create_take_lane(
+    ctx: Context,
+    track_index: TrackIndex,
+    name: OptionalTakeLaneName = None,
+) -> TakeLaneCreatedResult:
+    """Create a take lane on a track."""
+    connection = _get_connection(ctx)
+    params: dict[str, Any] = {"track_index": track_index}
+    if name is not None:
+        params["name"] = name
+    request = CommandRequest(command="arrangement.create_take_lane", params=params)
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return TakeLaneCreatedResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def set_take_lane_name(
+    ctx: Context,
+    track_index: TrackIndex,
+    take_lane_index: TakeLaneIndex,
+    name: LocatorName,
+) -> TakeLaneRenamedResult:
+    """Rename a take lane on a track."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.set_take_lane_name",
+        params={
+            "track_index": track_index,
+            "take_lane_index": take_lane_index,
+            "name": name,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return TakeLaneRenamedResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def create_take_lane_midi_clip(
+    ctx: Context,
+    track_index: TrackIndex,
+    take_lane_index: TakeLaneIndex,
+    start_time: StartTime,
+    length: PositiveLength,
+) -> TakeLaneMidiClipCreatedResult:
+    """Create an empty MIDI arrangement clip inside a take lane."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.create_take_lane_midi_clip",
+        params={
+            "track_index": track_index,
+            "take_lane_index": take_lane_index,
+            "start_time": start_time,
+            "length": length,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return TakeLaneMidiClipCreatedResult.model_validate(response.result)
+
+
+@mcp.tool()
+async def import_audio_to_take_lane(
+    ctx: Context,
+    track_index: TrackIndex,
+    take_lane_index: TakeLaneIndex,
+    file_path: AudioFilePath,
+    start_time: StartTime,
+) -> TakeLaneAudioImportResult:
+    """Import an audio file into a take lane on an audio track."""
+    connection = _get_connection(ctx)
+    request = CommandRequest(
+        command="arrangement.import_audio_to_take_lane",
+        params={
+            "track_index": track_index,
+            "take_lane_index": take_lane_index,
+            "file_path": file_path,
+            "start_time": start_time,
+        },
+    )
+    response = await connection.send_command(request)
+    response.raise_on_error()
+    return TakeLaneAudioImportResult.model_validate(response.result)
 
 
 @mcp.tool()
