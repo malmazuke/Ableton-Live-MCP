@@ -4,33 +4,15 @@
 
 Control Ableton Live from Claude, Cursor, or any other MCP client.
 
-Ableton Live MCP connects an AI assistant to a running copy of Ableton Live
-through a real Remote Script, so the assistant can inspect the session,
-create and edit clips, load devices, adjust mix settings, browse Live's
-content, and automate common production tasks without relying on screen
-automation.
+Ableton Live MCP lets an AI assistant operate a real Live set directly: create
+and edit clips, work with MIDI notes, load instruments and effects, adjust the
+mix, browse Live's content tree, manage scenes and tracks, and automate common
+production tasks without relying on screen automation.
 
-It is built as two Python components:
-
-- an MCP server that speaks JSON-RPC over stdio to your AI client
-- an Ableton Remote Script that runs inside Live and executes commands against
-  the Live Object Model
+If you want an assistant that can act on the set instead of just telling you
+what to click, this is the bridge.
 
 Tested against Ableton Live 12.2.5.
-
-## What it can do
-
-- Create, duplicate, rename, launch, stop, inspect, and edit session clips
-- Read and edit MIDI notes
-- Work with arrangement clips, locators, loop ranges, and take lanes
-- Import audio into session slots, arrangement tracks, and take lanes
-- Create tracks and scenes, rename them, duplicate them, and trigger them
-- Control transport, tempo, time signature, recording, overdub, undo, and redo
-- Adjust mixer settings including volume, pan, sends, returns, and routing
-- Browse Live's device/content tree, including plug-ins, and load instruments
-  and effects
-- Read and write device parameters
-- Read groove pool contents and apply grooves
 
 ## Example prompts
 
@@ -39,17 +21,6 @@ Tested against Ableton Live 12.2.5.
 - "Import this drum loop into slot 1 on track 5."
 - "Set the tempo to 128, loop bars 1 through 8, and start playback."
 - "Solo the bass, pull the vocal send down 3 dB, and add a reverb to the return."
-
-## How it works
-
-```
-AI Client <-> MCP Server (stdio) <-> TCP :9877 <-> Ableton Remote Script
-```
-
-The MCP server exposes tools to your AI client. Those tools send typed
-commands over TCP to the Remote Script running inside Ableton Live. The Remote
-Script executes them against the Live Object Model and returns structured
-results.
 
 ## Quick start
 
