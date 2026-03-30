@@ -2,45 +2,65 @@
 
 [![CI](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml)
 
-> Ableton Live MCP gives AI assistants a broad, tested control surface for Ableton Live 12.2.5: **session/transport/recording with undo/redo**, **track management including routing, explicit main/return/master addressing, and group-track folding**, **scene management**, **session clips**, **session, arrangement, and take-lane audio import**, **clip properties, clip automation, and audio clip gain/pitch/warp editing**, **MIDI notes**, **arrangement clips, take lanes, and locators**, **browser navigation including plug-ins**, **device/parameter control**, **groove pool**, and **mixer tools including sends/returns and master control**. Follow the [project board](https://github.com/users/malmazuke/projects/1) for follow-on extensions and runtime-limited gaps.
+Control Ableton Live from Claude, Cursor, or any other MCP client.
 
-Control Ableton Live with AI. Ask your AI assistant to create tracks, add clips, tweak devices, mix — anything you'd normally do by hand in Ableton.
+Ableton Live MCP connects an AI assistant to a running copy of Ableton Live
+through a real Remote Script, so the assistant can inspect the session,
+create and edit clips, load devices, adjust mix settings, browse Live's
+content, and automate common production tasks without relying on screen
+automation.
 
-Ableton Live MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that connects AI assistants like Cursor and Claude directly to Ableton Live 12, giving them a broad, typed control surface over the [Live Object Model](https://docs.cycling74.com/apiref/lom).
+It is built as two Python components:
 
-## What can you do with it?
+- an MCP server that speaks JSON-RPC over stdio to your AI client
+- an Ableton Remote Script that runs inside Live and executes commands against
+  the Live Object Model
 
-Open a chat in Cursor or Claude and ask for operations like:
+Tested against Ableton Live 12.2.5.
 
-- *"Create a 4-bar MIDI clip with a Cm7 chord progression"*
-- *"Add a reverb to track 3 and set the decay to 2.5 seconds"*
-- *"Set the tempo to 128 and loop bars 1–8"*
-- *"Solo the bass track and raise its volume to -3 dB"*
+## What it can do
 
-The AI assistant will execute supported commands directly in your running Ableton Live session.
+- Create, duplicate, rename, launch, stop, inspect, and edit session clips
+- Read and edit MIDI notes
+- Work with arrangement clips, locators, loop ranges, and take lanes
+- Import audio into session slots, arrangement tracks, and take lanes
+- Create tracks and scenes, rename them, duplicate them, and trigger them
+- Control transport, tempo, time signature, recording, overdub, undo, and redo
+- Adjust mixer settings including volume, pan, sends, returns, and routing
+- Browse Live's device/content tree, including plug-ins, and load instruments
+  and effects
+- Read and write device parameters
+- Read groove pool contents and apply grooves
+
+## Example prompts
+
+- "Create a 4-bar MIDI clip with a Cm7 chord progression on track 2."
+- "Load Analog on the selected synth track and turn the filter cutoff down."
+- "Import this drum loop into slot 1 on track 5."
+- "Set the tempo to 128, loop bars 1 through 8, and start playback."
+- "Solo the bass, pull the vocal send down 3 dB, and add a reverb to the return."
 
 ## How it works
 
 ```
-AI Assistant ◄── MCP (stdio) ──► MCP Server ◄── TCP :9877 ──► Remote Script inside Ableton Live
+AI Client <-> MCP Server (stdio) <-> TCP :9877 <-> Ableton Remote Script
 ```
 
-Two components work together:
+The MCP server exposes tools to your AI client. Those tools send typed
+commands over TCP to the Remote Script running inside Ableton Live. The Remote
+Script executes them against the Live Object Model and returns structured
+results.
 
-- **MCP Server** — a Python process that translates AI assistant requests into commands for Ableton. Built with the official [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk).
-- **Remote Script** — a Python control surface that runs inside Ableton Live, listens for commands over TCP, and executes them against the Live Object Model.
+## Quick start
 
-## Getting started
+### Requirements
 
-### Prerequisites
+- Python 3.10+
+- `uv`
+- Ableton Live 12
+- Cursor, Claude Desktop, or another MCP client
 
-- [Python 3.10+](https://www.python.org/downloads/)
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
-- Ableton Live 12 (any edition)
-- macOS or Windows
-- [Cursor](https://cursor.com) or [Claude Desktop](https://claude.ai/download)
-
-### 1. Clone and install dependencies
+### 1. Clone the repo and install dependencies
 
 ```bash
 git clone https://github.com/malmazuke/Ableton-Live-MCP.git
@@ -50,62 +70,27 @@ uv sync
 
 ### 2. Install the Remote Script
 
-The setup tool automatically finds your Ableton Remote Scripts directory and creates a symlink:
-
 ```bash
 uv run mcp-ableton-setup
 ```
 
-This installs the `AbletonLiveMCP` Remote Script into Ableton's Remote Scripts
-directory. The default `symlink` method keeps the installed script in sync with
-the repository.
+By default this installs `remote_script/AbletonLiveMCP` into Ableton's Remote
+Scripts directory as a symlink. For copy installs, manual installation,
+platform-specific paths, uninstall steps, and troubleshooting, see the
+[installation guide](docs/installation.md).
 
-<details>
-<summary>Setup options</summary>
+### 3. Enable it in Ableton Live
 
-```bash
-uv run mcp-ableton-setup --dry-run        # preview without making changes
-uv run mcp-ableton-setup --method copy     # copy files instead of symlink
-uv run mcp-ableton-setup --target /path    # override auto-detected directory
-uv run mcp-ableton-setup --uninstall       # remove the Remote Script
-```
+1. Open Ableton Live.
+2. Go to `Preferences > Link, Tempo & MIDI`.
+3. In an empty `Control Surface` slot, choose `AbletonLiveMCP`.
+4. Set both `Input` and `Output` to `None`.
 
-</details>
+When it loads correctly, Ableton should start listening on `127.0.0.1:9877`.
 
-<details>
-<summary>Manual installation (fallback)</summary>
+### 4. Add the MCP server to your client
 
-If the setup tool doesn't work for your system, install the Remote Script
-manually:
-
-**macOS:**
-```bash
-cp -r remote_script/AbletonLiveMCP ~/Music/Ableton/User\ Library/Remote\ Scripts/
-```
-
-**Windows:**
-```powershell
-Copy-Item -Recurse remote_script\AbletonLiveMCP "$env:USERPROFILE\Documents\Ableton\User Library\Remote Scripts\"
-```
-
-</details>
-
-### 3. Configure Ableton Live
-
-1. Open (or restart) Ableton Live 12
-2. Go to **Preferences** (Cmd+, on macOS)
-3. Navigate to **Link, Tempo & MIDI**
-4. In an empty **Control Surface** slot, select **AbletonLiveMCP**
-5. Set both **Input** and **Output** to **None**
-
-You should briefly see `AbletonLiveMCP: listening on port 9877` in the status
-bar, and Ableton's log should record the TCP server starting on `127.0.0.1:9877`.
-
-### 4. Configure your AI assistant
-
-**Cursor:**
-
-Create `.cursor/mcp.json` in the repo and add:
+Cursor:
 
 ```json
 {
@@ -118,12 +103,7 @@ Create `.cursor/mcp.json` in the repo and add:
 }
 ```
 
-For a global Cursor config, replace `${workspaceFolder}` with the absolute path
-to your cloned repository.
-
-**Claude Desktop:**
-
-Edit your config file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+Claude Desktop:
 
 ```json
 {
@@ -136,77 +116,51 @@ Edit your config file (`~/Library/Application Support/Claude/claude_desktop_conf
 }
 ```
 
-### 5. Verify
+### 5. Verify the connection
 
-1. Make sure Ableton Live is running with the Remote Script active (check the status bar)
-2. Open a new chat in your AI assistant
-3. Try: *"Get information about my current Ableton session"*
+Open a chat in your MCP client and ask for something simple, such as:
 
-For the full install guide, Windows notes, uninstall flow, and troubleshooting,
-see [docs/installation.md](docs/installation.md).
+- "Get the current Ableton session info."
+- "List my tracks and current tempo."
 
-### Uninstalling
+## Feature overview
 
-Remove the Remote Script from Ableton:
+- **Session and transport**: session info, playback position, playback
+  control, tempo, time signature, recording, overdub, capture MIDI, undo, redo
+- **Tracks and mixer**: track creation and deletion, rename, mute, solo, arm
+  where supported, routing, volume, pan, sends, returns, and master control
+- **Scenes**: list, create, duplicate, rename, fire, stop, and delete scenes
+- **Clips and notes**: session clip creation, duplication, deletion, launch,
+  stop, rename, audio import, note read/write, clip loop and color editing,
+  clip automation, and audio clip gain/pitch/warp controls
+- **Arrangement**: arrangement clip listing, creation, movement, loop control,
+  locator management, arrangement audio import, and take-lane support
+- **Devices and browser**: browser tree/items/search, plug-in browser support,
+  instrument/effect loading, and device parameter read/write
+- **Grooves**: groove pool listing and groove application
 
-```bash
-uv run mcp-ableton-setup --uninstall
-```
+## Limitations
 
-Then remove the MCP server configuration from your AI assistant's settings.
+- Main-track Arrangement tempo automation is not currently supported by a
+  public runtime API in Live 12.2.5.
+- Live 12.2.5 exposes fold state and grouping metadata for existing group
+  tracks, but not a supported public API for creating new group tracks or
+  regrouping existing tracks.
 
-### Troubleshooting
+## Documentation
 
-| Problem | Solution |
-|---------|----------|
-| Remote Script not appearing in Ableton | Restart Ableton and confirm `AbletonLiveMCP` exists under your `Remote Scripts` directory. |
-| "Connection refused" errors | Make sure Ableton is running, `AbletonLiveMCP` is selected as a control surface, and something is listening on port `9877`. |
-| Port 9877 already in use | Find the conflicting process and stop it, then reload the control surface. |
-| Setup tool can't find Remote Scripts directory | Create the default `Remote Scripts` directory first or pass `--target`. |
-| Changes not reflected after git pull | Re-run the installer for copy installs; restart Ableton and clear `__pycache__` for symlink installs if needed. |
-
-See [docs/installation.md](docs/installation.md) for the canonical install and
-troubleshooting guide.
-
-## Capabilities
-
-Ableton Live MCP provides a broad, tested control surface for Ableton Live 12.2.5. The core communication layer, tool surface, tests, and CI are all in place.
-
-| Area | Available tools |
-|------|-----------------|
-| Transport & session | Session info, playback position, tempo, time signature, playback, recording, overdub, capture MIDI, undo, redo |
-| Tracks & mixing | Track CRUD, mute/solo/arm where supported, explicit `main`/`return`/`master` addressing, routing, volume/pan, sends/returns, master control, group-track fold support |
-| Session clips | Create, duplicate, delete, fire, stop, rename, inspect, import audio, and edit MIDI notes |
-| Arrangement & take lanes | Arrangement clip listing/creation/move, arrangement length/loop, locators, take-lane listing/creation/rename, take-lane MIDI clip creation, take-lane audio import |
-| Clip editing | Clip loop/color, clip automation read/write, audio clip gain/pitch/warp editing |
-| Devices & browser | Browser tree/items/search, instrument/effect loading, plug-in browser support, device parameter read/write |
-| Scenes & grooves | Scene management, groove pool listing, groove application |
-
-The remaining backlog is mostly post-v1 extensions and runtime-limited features rather than core missing domains.
-
-See the [project board](https://github.com/users/malmazuke/projects/1) for detailed progress, follow-on work, and runtime-limited investigations.
-
-## Known limitations
-
-- `set_tempo` style commands can change the current song tempo at runtime.
-- Native Arrangement tempo automation on the Main track is **not** currently supported.
-- On Ableton Live 12.2.5, Live exposes `song.tempo` for direct tempo changes, but does not expose a supported public runtime API for creating or editing the Main track's tempo automation envelope.
-- Because of that limitation, Ableton Live MCP does **not** attempt to patch `.als` files, drive the Live UI, or require extra OS permissions just to emulate tempo automation. If Ableton exposes a supported API for this in a future Live release, the feature can be revisited.
-- Live 12.2.5 exposes fold state and grouping metadata for existing group tracks, but not a supported public API for creating new group tracks or regrouping existing tracks.
-
-## Follow-on work
-
-The project board now tracks follow-on extensions, post-v1 experiments, and runtime-limited investigations rather than a missing core MCP surface. That includes areas such as broader return/master mutation coverage and any future Live APIs for true group-track creation or Main-track tempo automation.
+- [Installation guide](docs/installation.md)
 
 ## Contributing
 
-Contributions are welcome. Check the [project board](https://github.com/users/malmazuke/projects/1) for follow-on work, extensions, and runtime-limited investigations.
+Contributions are welcome. If you want to extend the tool surface or report a
+runtime limitation, open an issue or PR.
 
 ```bash
 git clone https://github.com/malmazuke/Ableton-Live-MCP.git
 cd Ableton-Live-MCP
-uv sync          # install dependencies
-uv run pytest    # run tests
+uv sync
+uv run pytest
 ```
 
 ## License
