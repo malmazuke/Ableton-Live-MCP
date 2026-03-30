@@ -2,15 +2,15 @@
 
 [![CI](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml)
 
-> **🚧 Work in Progress** — Ableton Live MCP is usable today for the current shipped tool surface: **session/transport/recording with undo/redo**, **track management including explicit main/return/master addressing and routing**, **scene management**, **session clip**, **session and arrangement audio import**, **clip properties, clip automation, and audio clip gain/pitch/warp editing**, **MIDI note**, **arrangement clip, take lane, and locator**, **browser**, **device/parameter**, **groove pool**, and **mixer tools including sends/returns and return-track control** are implemented. More domains are still in flight. Follow along on the [project board](https://github.com/users/malmazuke/projects/1) to see what's being built.
+> **Shipped and actively maintained** — Ableton Live MCP now provides a broad, tested MCP surface for Ableton Live 12.2.5: **session/transport/recording with undo/redo**, **track management including routing, explicit main/return/master addressing, and group-track folding**, **scene management**, **session clips**, **session, arrangement, and take-lane audio import**, **clip properties, clip automation, and audio clip gain/pitch/warp editing**, **MIDI notes**, **arrangement clips, take lanes, and locators**, **browser navigation including plug-ins**, **device/parameter control**, **groove pool**, and **mixer tools including sends/returns and master control**. Follow the [project board](https://github.com/users/malmazuke/projects/1) for follow-on extensions and runtime-limited gaps.
 
 Control Ableton Live with AI. Ask your AI assistant to create tracks, add clips, tweak devices, mix — anything you'd normally do by hand in Ableton.
 
-Ableton Live MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that connects AI assistants like Cursor and Claude directly to Ableton Live 12, giving them access to the full [Live Object Model](https://docs.cycling74.com/apiref/lom).
+Ableton Live MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that connects AI assistants like Cursor and Claude directly to Ableton Live 12, giving them a broad, typed control surface over the [Live Object Model](https://docs.cycling74.com/apiref/lom).
 
 ## What can you do with it?
 
-Today you can already open a chat in Cursor or Claude and ask for operations like:
+With the current `main` branch you can open a chat in Cursor or Claude and ask for operations like:
 
 - *"Create a 4-bar MIDI clip with a Cm7 chord progression"*
 - *"Add a reverb to track 3 and set the decay to 2.5 seconds"*
@@ -170,9 +170,21 @@ troubleshooting guide.
 
 ## Current status
 
-The communication layer between the MCP server and Ableton's Remote Script is built and tested. The current implementation now includes transport/session/recording with undo/redo, track management and routing, explicit scoped track addressing for main/return/master info and supported mutations, scene management, session clips, audio file import to session and arrangement, clip loop/color editing, audio clip gain/pitch/warp editing, clip automation read/write, MIDI notes, arrangement clips, take lanes, and locators, browser navigation including plug-ins, device parameters, groove pool access, and mixer control for track volume/pan, sends, return tracks, and master volume. Remaining work focuses on the rest of the roadmap such as broader return/master mutation coverage.
+Ableton Live MCP now ships a broad, tested control surface on `main` for Ableton Live 12.2.5. The core communication layer, tool surface, tests, and CI are all in place.
 
-See the [project board](https://github.com/users/malmazuke/projects/1) for detailed progress and planned work.
+| Area | What ships on `main` |
+|------|----------------------|
+| Transport & session | Session info, playback position, tempo, time signature, playback, recording, overdub, capture MIDI, undo, redo |
+| Tracks & mixing | Track CRUD, mute/solo/arm where supported, explicit `main`/`return`/`master` addressing, routing, volume/pan, sends/returns, master control, group-track fold support |
+| Session clips | Create, duplicate, delete, fire, stop, rename, inspect, import audio, and edit MIDI notes |
+| Arrangement & take lanes | Arrangement clip listing/creation/move, arrangement length/loop, locators, take-lane listing/creation/rename, take-lane MIDI clip creation, take-lane audio import |
+| Clip editing | Clip loop/color, clip automation read/write, audio clip gain/pitch/warp editing |
+| Devices & browser | Browser tree/items/search, instrument/effect loading, plug-in browser support, device parameter read/write |
+| Scenes & grooves | Scene management, groove pool listing, groove application |
+
+The remaining backlog is mostly post-v1 extensions and runtime-limited features rather than core missing domains.
+
+See the [project board](https://github.com/users/malmazuke/projects/1) for detailed progress, follow-on work, and runtime-limited investigations.
 
 ## Known limitations
 
@@ -180,22 +192,15 @@ See the [project board](https://github.com/users/malmazuke/projects/1) for detai
 - Native Arrangement tempo automation on the Main track is **not** currently supported.
 - On Ableton Live 12.2.5, Live exposes `song.tempo` for direct tempo changes, but does not expose a supported public runtime API for creating or editing the Main track's tempo automation envelope.
 - Because of that limitation, Ableton Live MCP does **not** attempt to patch `.als` files, drive the Live UI, or require extra OS permissions just to emulate tempo automation. If Ableton exposes a supported API for this in a future Live release, the feature can be revisited.
+- Live 12.2.5 exposes fold state and grouping metadata for existing group tracks, but not a supported public API for creating new group tracks or regrouping existing tracks.
 
-**Planned capabilities:**
+## Follow-on work
 
-| Area | Examples |
-|------|----------|
-| Transport & session | Play, stop, record, set tempo, time signature, loop |
-| Tracks | Broader return/master mutation coverage and existing group-track fold operations |
-| Arrangement clips | Create, move, import, and edit clips in arrangement view, including take lanes |
-| Session clips | Fire, stop, import, and manage clips in session view |
-| Devices & parameters | Load instruments/effects, read and tweak parameters |
-| Scenes | Create, fire, and manage scenes |
-| Mixing | Volume, pan, sends, solo, mute, arm |
+The project board now tracks follow-on extensions, post-v1 experiments, and runtime-limited investigations rather than a missing core MCP surface. That includes areas such as broader return/master mutation coverage and any future Live APIs for true group-track creation or Main-track tempo automation.
 
 ## Contributing
 
-This project is in its early stages and contributions are welcome. Check the [project board](https://github.com/users/malmazuke/projects/1) to see what's in progress and what's coming next.
+The core MCP surface is now shipped and contributions are welcome. Check the [project board](https://github.com/users/malmazuke/projects/1) for follow-on work, extensions, and runtime-limited investigations.
 
 ```bash
 git clone https://github.com/malmazuke/Ableton-Live-MCP.git
