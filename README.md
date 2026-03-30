@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/malmazuke/Ableton-Live-MCP/actions/workflows/ci.yml)
 
-> **Shipped and actively maintained** — Ableton Live MCP now provides a broad, tested MCP surface for Ableton Live 12.2.5: **session/transport/recording with undo/redo**, **track management including routing, explicit main/return/master addressing, and group-track folding**, **scene management**, **session clips**, **session, arrangement, and take-lane audio import**, **clip properties, clip automation, and audio clip gain/pitch/warp editing**, **MIDI notes**, **arrangement clips, take lanes, and locators**, **browser navigation including plug-ins**, **device/parameter control**, **groove pool**, and **mixer tools including sends/returns and master control**. Follow the [project board](https://github.com/users/malmazuke/projects/1) for follow-on extensions and runtime-limited gaps.
+> Ableton Live MCP gives AI assistants a broad, tested control surface for Ableton Live 12.2.5: **session/transport/recording with undo/redo**, **track management including routing, explicit main/return/master addressing, and group-track folding**, **scene management**, **session clips**, **session, arrangement, and take-lane audio import**, **clip properties, clip automation, and audio clip gain/pitch/warp editing**, **MIDI notes**, **arrangement clips, take lanes, and locators**, **browser navigation including plug-ins**, **device/parameter control**, **groove pool**, and **mixer tools including sends/returns and master control**. Follow the [project board](https://github.com/users/malmazuke/projects/1) for follow-on extensions and runtime-limited gaps.
 
 Control Ableton Live with AI. Ask your AI assistant to create tracks, add clips, tweak devices, mix — anything you'd normally do by hand in Ableton.
 
@@ -10,7 +10,7 @@ Ableton Live MCP is a [Model Context Protocol](https://modelcontextprotocol.io) 
 
 ## What can you do with it?
 
-With the current `main` branch you can open a chat in Cursor or Claude and ask for operations like:
+Open a chat in Cursor or Claude and ask for operations like:
 
 - *"Create a 4-bar MIDI clip with a Cm7 chord progression"*
 - *"Add a reverb to track 3 and set the decay to 2.5 seconds"*
@@ -168,12 +168,12 @@ Then remove the MCP server configuration from your AI assistant's settings.
 See [docs/installation.md](docs/installation.md) for the canonical install and
 troubleshooting guide.
 
-## Current status
+## Capabilities
 
-Ableton Live MCP now ships a broad, tested control surface on `main` for Ableton Live 12.2.5. The core communication layer, tool surface, tests, and CI are all in place.
+Ableton Live MCP provides a broad, tested control surface for Ableton Live 12.2.5. The core communication layer, tool surface, tests, and CI are all in place.
 
-| Area | What ships on `main` |
-|------|----------------------|
+| Area | Available tools |
+|------|-----------------|
 | Transport & session | Session info, playback position, tempo, time signature, playback, recording, overdub, capture MIDI, undo, redo |
 | Tracks & mixing | Track CRUD, mute/solo/arm where supported, explicit `main`/`return`/`master` addressing, routing, volume/pan, sends/returns, master control, group-track fold support |
 | Session clips | Create, duplicate, delete, fire, stop, rename, inspect, import audio, and edit MIDI notes |
@@ -200,7 +200,7 @@ The project board now tracks follow-on extensions, post-v1 experiments, and runt
 
 ## Contributing
 
-The core MCP surface is now shipped and contributions are welcome. Check the [project board](https://github.com/users/malmazuke/projects/1) for follow-on work, extensions, and runtime-limited investigations.
+Contributions are welcome. Check the [project board](https://github.com/users/malmazuke/projects/1) for follow-on work, extensions, and runtime-limited investigations.
 
 ```bash
 git clone https://github.com/malmazuke/Ableton-Live-MCP.git
