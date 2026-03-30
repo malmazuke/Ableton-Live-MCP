@@ -21,7 +21,7 @@ class TrackHandler(BaseHandler):
     def _find_main_track_index(self, target_track: Any) -> int | None:
         """Return the 1-based main-track index for ``target_track`` if present."""
         for index, candidate in enumerate(self._song.tracks, start=1):
-            if candidate is target_track:
+            if candidate is target_track or candidate == target_track:
                 return index
         return None
 
@@ -118,9 +118,6 @@ class TrackHandler(BaseHandler):
         default: bool = False,
     ) -> bool:
         """Read a boolean property from a track, falling back safely."""
-        if not hasattr(track, attribute_name):
-            return default
-
         try:
             return bool(getattr(track, attribute_name))
         except Exception:
@@ -133,9 +130,6 @@ class TrackHandler(BaseHandler):
         default: Any = None,
     ) -> Any:
         """Read a track attribute defensively."""
-        if not hasattr(track, attribute_name):
-            return default
-
         try:
             return getattr(track, attribute_name)
         except Exception:
@@ -149,8 +143,12 @@ class TrackHandler(BaseHandler):
         label: str,
     ) -> None:
         """Set a track attribute if the runtime supports it."""
-        if not hasattr(track, attribute_name):
-            raise InvalidParamsError(f"{label} does not support {attribute_name}")
+        try:
+            getattr(track, attribute_name)
+        except Exception as exc:
+            raise InvalidParamsError(
+                f"{label} does not support {attribute_name}"
+            ) from exc
         try:
             setattr(track, attribute_name, value)
         except Exception as exc:
@@ -196,14 +194,14 @@ class TrackHandler(BaseHandler):
         track_index: int,
     ) -> dict[str, str]:
         """Read and normalize a selected routing value from a track."""
-        if not hasattr(track, attribute_name):
+        try:
+            option = getattr(track, attribute_name)
+        except Exception as exc:
             raise InvalidParamsError(
                 "Track "
                 f"{track_index} does not support "
                 f"{self._routing_label(attribute_name)}"
-            )
-
-        option = getattr(track, attribute_name)
+            ) from exc
         if option is None:
             raise InvalidParamsError(
                 "Track "
@@ -219,14 +217,14 @@ class TrackHandler(BaseHandler):
         track_index: int,
     ) -> list[Any]:
         """Read and validate an available routing collection from a track."""
-        if not hasattr(track, attribute_name):
+        try:
+            collection = getattr(track, attribute_name)
+        except Exception as exc:
             raise InvalidParamsError(
                 "Track "
                 f"{track_index} does not support "
                 f"{self._routing_label(attribute_name)}"
-            )
-
-        collection = getattr(track, attribute_name)
+            ) from exc
         if collection is None:
             raise InvalidParamsError(
                 "Track "

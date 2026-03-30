@@ -184,6 +184,12 @@ class _Track:
         return list(self._output_channels_by_type[str(hash(self._output_routing_type))])
 
 
+class _GroupTrackWithUnavailableArm(_Track):
+    @property
+    def arm(self) -> bool:
+        raise RuntimeError("Main and Return Tracks have no 'Arm' state!")
+
+
 class _FakeSong:
     def __init__(self, tracks: list[_Track] | None = None) -> None:
         self.tracks = tracks or [_Track("One"), _Track("Two")]
@@ -310,6 +316,27 @@ class TestGetInfo:
         assert result["fold_state"] is None
         assert result["is_grouped"] is True
         assert result["group_track_index"] == 1
+
+    def test_group_track_info_tolerates_runtime_erroring_arm_property(self) -> None:
+        group_track = _GroupTrackWithUnavailableArm(
+            "Group",
+            midi=False,
+            audio=False,
+            is_foldable=True,
+            fold_state=False,
+            supports_arm=False,
+        )
+        child_track = _Track("Child", group_track=group_track)
+        handler = TrackHandler(
+            _FakeControlSurface(_FakeSong([group_track, child_track]))
+        )
+
+        result = handler.handle_get_info({"track_index": 1})
+
+        assert result["track_index"] == 1
+        assert result["is_foldable"] is True
+        assert result["fold_state"] is False
+        assert result["arm"] is False
 
     def test_raises_not_found(self, handler: TrackHandler) -> None:
         with pytest.raises(NotFoundError, match="Track 99"):
