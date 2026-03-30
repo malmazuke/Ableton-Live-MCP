@@ -393,6 +393,12 @@ audio import, sends/returns, recording, and clip properties.
 - `get_arrangement_length` — total arrangement length
 - `set_arrangement_loop` — loop start, end, enabled
 
+Post-v1 extension note (2026-03-30): take-lane tools were not part of this
+ADR's original definitive phased list. Issue #20 explicitly extends the shipped
+`arrangement.*` surface for the Live 12.2.5 take-lane runtime APIs only:
+`get_take_lanes`, `create_take_lane`, `set_take_lane_name`,
+`create_take_lane_midi_clip`, and `import_audio_to_take_lane`.
+
 #### Audio Import (2 tools)
 - `import_audio_to_session` — import a local audio file into an empty session slot
 - `import_audio_to_arrangement` — import a local audio file into arrangement at a beat position
@@ -557,6 +563,11 @@ Commands use `category.action` dot notation (adopted from ptaczek):
 | `move_arrangement_clip` | `arrangement.move_clip` |
 | `get_arrangement_length` | `arrangement.get_length` |
 | `set_arrangement_loop` | `arrangement.set_loop` |
+| `get_take_lanes` | `arrangement.get_take_lanes` |
+| `create_take_lane` | `arrangement.create_take_lane` |
+| `set_take_lane_name` | `arrangement.set_take_lane_name` |
+| `create_take_lane_midi_clip` | `arrangement.create_take_lane_midi_clip` |
+| `import_audio_to_take_lane` | `arrangement.import_audio_to_take_lane` |
 | `get_locators` | `arrangement.get_locators` |
 | `create_locator` | `arrangement.create_locator` |
 | `delete_locator` | `arrangement.delete_locator` |

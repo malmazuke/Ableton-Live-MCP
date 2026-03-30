@@ -26,17 +26,29 @@ from mcp_ableton.tools.arrangement import (
     LocatorInfo,
     LocatorRenamedResult,
     LocatorsResult,
+    TakeLaneAudioImportResult,
+    TakeLaneClipInfo,
+    TakeLaneCreatedResult,
+    TakeLaneInfo,
+    TakeLaneMidiClipCreatedResult,
+    TakeLaneRenamedResult,
+    TakeLanesResult,
     create_arrangement_clip,
     create_locator,
+    create_take_lane,
+    create_take_lane_midi_clip,
     delete_locator,
     get_arrangement_clips,
     get_arrangement_length,
     get_locators,
+    get_take_lanes,
     import_audio_to_arrangement,
+    import_audio_to_take_lane,
     jump_to_time,
     move_arrangement_clip,
     set_arrangement_loop,
     set_locator_name,
+    set_take_lane_name,
 )
 
 TOOL_NAMES = [
@@ -46,6 +58,11 @@ TOOL_NAMES = [
     "get_arrangement_length",
     "set_arrangement_loop",
     "import_audio_to_arrangement",
+    "get_take_lanes",
+    "create_take_lane",
+    "set_take_lane_name",
+    "create_take_lane_midi_clip",
+    "import_audio_to_take_lane",
     "get_locators",
     "create_locator",
     "delete_locator",
@@ -85,6 +102,59 @@ ARRANGEMENT_AUDIO_IMPORT_RESULT = {
     "name": "vocal",
     "file_path": "/tmp/vocal.wav",
     "start_time": 12.0,
+    "length": 8.5,
+    "is_audio_clip": True,
+}
+
+TAKE_LANES_RESULT = {
+    "track_index": 1,
+    "take_lanes": [
+        {
+            "take_lane_index": 1,
+            "name": "Comp A",
+            "clips": [
+                {
+                    "clip_index": 1,
+                    "name": "Verse Take",
+                    "start_time": 8.0,
+                    "end_time": 12.0,
+                    "length": 4.0,
+                    "is_audio_clip": False,
+                    "is_midi_clip": True,
+                }
+            ],
+        }
+    ],
+}
+
+TAKE_LANE_CREATED_RESULT = {
+    "track_index": 1,
+    "take_lane_index": 2,
+    "name": "MCP Take Lane",
+}
+
+TAKE_LANE_RENAMED_RESULT = {
+    "track_index": 1,
+    "take_lane_index": 2,
+    "name": "Renamed Lane",
+}
+
+TAKE_LANE_MIDI_CLIP_CREATED_RESULT = {
+    "track_index": 1,
+    "take_lane_index": 2,
+    "clip_index": 1,
+    "start_time": 16.0,
+    "length": 4.0,
+    "name": "New MIDI Clip",
+}
+
+TAKE_LANE_AUDIO_IMPORT_RESULT = {
+    "track_index": 2,
+    "take_lane_index": 1,
+    "clip_index": 2,
+    "name": "vox",
+    "file_path": "/tmp/vox.wav",
+    "start_time": 24.0,
     "length": 8.5,
     "is_audio_clip": True,
 }
@@ -184,6 +254,39 @@ class TestToolContracts:
         assert props["start_time"]["minimum"] == 0.0
         assert props["file_path"]["type"] == "string"
 
+    def test_get_take_lanes_schema(self) -> None:
+        tool = self._get_tool("get_take_lanes")
+        assert tool.parameters["properties"]["track_index"]["minimum"] == 1
+
+    def test_create_take_lane_schema_defaults(self) -> None:
+        tool = self._get_tool("create_take_lane")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+        assert props["name"]["default"] is None
+
+    def test_set_take_lane_name_schema(self) -> None:
+        tool = self._get_tool("set_take_lane_name")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+        assert props["take_lane_index"]["minimum"] == 1
+        assert props["name"]["type"] == "string"
+
+    def test_create_take_lane_midi_clip_schema(self) -> None:
+        tool = self._get_tool("create_take_lane_midi_clip")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+        assert props["take_lane_index"]["minimum"] == 1
+        assert props["start_time"]["minimum"] == 0.0
+        assert props["length"]["exclusiveMinimum"] == 0.0
+
+    def test_import_audio_to_take_lane_schema(self) -> None:
+        tool = self._get_tool("import_audio_to_take_lane")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+        assert props["take_lane_index"]["minimum"] == 1
+        assert props["start_time"]["minimum"] == 0.0
+        assert props["file_path"]["type"] == "string"
+
     def test_get_locators_schema(self) -> None:
         tool = self._get_tool("get_locators")
         assert tool.parameters["properties"] == {}
@@ -256,6 +359,56 @@ class TestInputValidation:
         model = self._arg_model("import_audio_to_arrangement")
         with pytest.raises(ValidationError):
             model(track_index=2, file_path="audio/vocal.wav", start_time=4.0)
+
+    def test_create_take_lane_accepts_omitted_name(self) -> None:
+        model = self._arg_model("create_take_lane")
+        args = model(track_index=1)
+        assert args.name is None
+
+    def test_create_take_lane_rejects_blank_name(self) -> None:
+        model = self._arg_model("create_take_lane")
+        with pytest.raises(ValidationError):
+            model(track_index=1, name="   ")
+
+    @pytest.mark.parametrize(
+        "tool_name",
+        ["set_take_lane_name", "create_take_lane_midi_clip"],
+    )
+    def test_take_lane_tools_reject_non_positive_take_lane_index(
+        self,
+        tool_name: str,
+    ) -> None:
+        model = self._arg_model(tool_name)
+        with pytest.raises(ValidationError):
+            if tool_name == "set_take_lane_name":
+                model(track_index=1, take_lane_index=0, name="Lane")
+            else:
+                model(
+                    track_index=1,
+                    take_lane_index=0,
+                    start_time=0.0,
+                    length=4.0,
+                )
+
+    def test_set_take_lane_name_rejects_blank_name(self) -> None:
+        model = self._arg_model("set_take_lane_name")
+        with pytest.raises(ValidationError):
+            model(track_index=1, take_lane_index=1, name="   ")
+
+    def test_create_take_lane_midi_clip_rejects_non_positive_length(self) -> None:
+        model = self._arg_model("create_take_lane_midi_clip")
+        with pytest.raises(ValidationError):
+            model(track_index=1, take_lane_index=1, start_time=0.0, length=0.0)
+
+    def test_import_audio_to_take_lane_rejects_relative_file_path(self) -> None:
+        model = self._arg_model("import_audio_to_take_lane")
+        with pytest.raises(ValidationError):
+            model(
+                track_index=2,
+                take_lane_index=1,
+                file_path="audio/vox.wav",
+                start_time=8.0,
+            )
 
     def test_create_locator_accepts_omitted_name(self) -> None:
         model = self._arg_model("create_locator")
@@ -445,6 +598,153 @@ class TestLocators:
 
         with pytest.raises(CommandError, match="INVALID_PARAMS"):
             await create_locator(ctx=mock_context, time=16.0)
+
+
+class TestTakeLanes:
+    async def test_get_take_lanes_returns_nested_result(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(TAKE_LANES_RESULT)
+
+        result = await get_take_lanes(ctx=mock_context, track_index=1)
+
+        assert isinstance(result, TakeLanesResult)
+        assert isinstance(result.take_lanes[0], TakeLaneInfo)
+        assert isinstance(result.take_lanes[0].clips[0], TakeLaneClipInfo)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.get_take_lanes"
+        assert req.params == {"track_index": 1}
+
+    async def test_create_take_lane_sends_name_when_provided(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            TAKE_LANE_CREATED_RESULT
+        )
+
+        result = await create_take_lane(
+            ctx=mock_context,
+            track_index=1,
+            name="MCP Take Lane",
+        )
+
+        assert isinstance(result, TakeLaneCreatedResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.create_take_lane"
+        assert req.params == {"track_index": 1, "name": "MCP Take Lane"}
+
+    async def test_create_take_lane_omits_name_when_missing(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            TAKE_LANE_CREATED_RESULT
+        )
+
+        await create_take_lane(ctx=mock_context, track_index=1)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.params == {"track_index": 1}
+
+    async def test_set_take_lane_name_sends_command(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            TAKE_LANE_RENAMED_RESULT
+        )
+
+        result = await set_take_lane_name(
+            ctx=mock_context,
+            track_index=1,
+            take_lane_index=2,
+            name="Renamed Lane",
+        )
+
+        assert isinstance(result, TakeLaneRenamedResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.set_take_lane_name"
+        assert req.params == {
+            "track_index": 1,
+            "take_lane_index": 2,
+            "name": "Renamed Lane",
+        }
+
+    async def test_create_take_lane_midi_clip_sends_command(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            TAKE_LANE_MIDI_CLIP_CREATED_RESULT
+        )
+
+        result = await create_take_lane_midi_clip(
+            ctx=mock_context,
+            track_index=1,
+            take_lane_index=2,
+            start_time=16.0,
+            length=4.0,
+        )
+
+        assert isinstance(result, TakeLaneMidiClipCreatedResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.create_take_lane_midi_clip"
+        assert req.params == {
+            "track_index": 1,
+            "take_lane_index": 2,
+            "start_time": 16.0,
+            "length": 4.0,
+        }
+
+    async def test_import_audio_to_take_lane_sends_command(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+        tmp_path,
+    ) -> None:
+        file_path = tmp_path / "vox.wav"
+        file_path.write_bytes(b"RIFF")
+        response_result = dict(TAKE_LANE_AUDIO_IMPORT_RESULT)
+        response_result["file_path"] = str(file_path)
+        mock_connection.send_command.return_value = _ok_response(response_result)
+
+        result = await import_audio_to_take_lane(
+            ctx=mock_context,
+            track_index=2,
+            take_lane_index=1,
+            file_path=str(file_path),
+            start_time=24.0,
+        )
+
+        assert isinstance(result, TakeLaneAudioImportResult)
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "arrangement.import_audio_to_take_lane"
+        assert req.params == {
+            "track_index": 2,
+            "take_lane_index": 1,
+            "file_path": str(file_path),
+            "start_time": 24.0,
+        }
+
+    async def test_get_take_lanes_raises_on_error(
+        self,
+        mock_context: MagicMock,
+        mock_connection: AsyncMock,
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="NOT_FOUND",
+            message="Track 9 does not exist",
+        )
+
+        with pytest.raises(CommandError, match="NOT_FOUND"):
+            await get_take_lanes(ctx=mock_context, track_index=9)
 
 
 class TestCreateArrangementClip:
@@ -660,6 +960,30 @@ class TestResponseModels:
             ARRANGEMENT_AUDIO_IMPORT_RESULT
         )
         assert result.is_audio_clip is True
+
+    def test_take_lane_models_accept_valid(self) -> None:
+        take_lanes = TakeLanesResult.model_validate(TAKE_LANES_RESULT)
+        assert take_lanes.take_lanes[0].take_lane_index == 1
+        assert take_lanes.take_lanes[0].clips[0].is_midi_clip is True
+        assert TakeLaneCreatedResult.model_validate(TAKE_LANE_CREATED_RESULT).name == (
+            "MCP Take Lane"
+        )
+        assert (
+            TakeLaneRenamedResult.model_validate(TAKE_LANE_RENAMED_RESULT).name
+            == "Renamed Lane"
+        )
+        assert (
+            TakeLaneMidiClipCreatedResult.model_validate(
+                TAKE_LANE_MIDI_CLIP_CREATED_RESULT
+            ).clip_index
+            == 1
+        )
+        assert (
+            TakeLaneAudioImportResult.model_validate(
+                TAKE_LANE_AUDIO_IMPORT_RESULT
+            ).is_audio_clip
+            is True
+        )
 
     def test_locator_models_accept_valid(self) -> None:
         locators = LocatorsResult.model_validate(LOCATORS_RESULT)
