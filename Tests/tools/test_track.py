@@ -23,6 +23,7 @@ from mcp_ableton.tools.track import (
     TrackCreatedResult,
     TrackDeletedResult,
     TrackDuplicatedResult,
+    TrackFoldResult,
     TrackInfo,
     TrackInputRoutingResult,
     TrackOutputRoutingResult,
@@ -32,6 +33,7 @@ from mcp_ableton.tools.track import (
     create_midi_track,
     delete_track,
     duplicate_track,
+    fold_group,
     get_available_routing,
     get_track_info,
     get_track_routing,
@@ -53,6 +55,7 @@ TOOL_NAMES = [
     "create_audio_track",
     "delete_track",
     "duplicate_track",
+    "fold_group",
     "set_track_name",
     "set_track_mute",
     "set_track_solo",
@@ -89,6 +92,10 @@ TRACK_INFO_RESULT = {
     "pan": 0.0,
     "device_names": ["Instrument Rack"],
     "clip_slot_has_clip": [False, True],
+    "is_foldable": False,
+    "fold_state": None,
+    "is_grouped": False,
+    "group_track_index": None,
 }
 
 RETURN_TRACK_INFO_RESULT = {
@@ -104,6 +111,10 @@ RETURN_TRACK_INFO_RESULT = {
     "pan": -0.1,
     "device_names": [],
     "clip_slot_has_clip": [],
+    "is_foldable": False,
+    "fold_state": None,
+    "is_grouped": False,
+    "group_track_index": None,
 }
 
 MASTER_TRACK_INFO_RESULT = {
@@ -119,6 +130,29 @@ MASTER_TRACK_INFO_RESULT = {
     "pan": 0.0,
     "device_names": [],
     "clip_slot_has_clip": [],
+    "is_foldable": False,
+    "fold_state": None,
+    "is_grouped": False,
+    "group_track_index": None,
+}
+
+GROUPED_TRACK_INFO_RESULT = {
+    "name": "Bass",
+    "track_scope": "main",
+    "track_index": 2,
+    "is_audio_track": False,
+    "is_midi_track": True,
+    "mute": False,
+    "solo": False,
+    "arm": False,
+    "volume": 0.8,
+    "pan": 0.0,
+    "device_names": [],
+    "clip_slot_has_clip": [False, False],
+    "is_foldable": False,
+    "fold_state": None,
+    "is_grouped": True,
+    "group_track_index": 1,
 }
 
 ROUTING_OPTION_RESULT = {
@@ -220,6 +254,11 @@ MASTER_TRACK_UPDATED_RESULT = {
     "track_index": None,
 }
 
+TRACK_FOLD_RESULT = {
+    "track_index": 3,
+    "folded": True,
+}
+
 
 class TestToolContracts:
     def _get_tool(self, name: str):
@@ -278,6 +317,12 @@ class TestToolContracts:
         tool = self._get_tool("create_audio_track")
         props = tool.parameters["properties"]
         assert props["index"]["default"] == -1
+
+    def test_fold_group_schema(self) -> None:
+        tool = self._get_tool("fold_group")
+        props = tool.parameters["properties"]
+        assert props["track_index"]["minimum"] == 1
+        assert props["folded"]["type"] == "boolean"
 
     @pytest.mark.parametrize(
         "tool_name",
@@ -363,6 +408,18 @@ class TestInputValidation:
         assert args.track_scope == "master"
         assert args.track_index is None
 
+    def test_fold_group_accepts_valid_input(self) -> None:
+        model = self._arg_model("fold_group")
+        args = model(track_index=2, folded=True)
+        assert args.track_index == 2
+        assert args.folded is True
+
+    @pytest.mark.parametrize("track_index", [0, -1])
+    def test_fold_group_rejects_non_positive_index(self, track_index: int) -> None:
+        model = self._arg_model("fold_group")
+        with pytest.raises(ValidationError):
+            model(track_index=track_index, folded=True)
+
 
 class TestGetTrackInfo:
     async def test_returns_track_info(
@@ -377,6 +434,10 @@ class TestGetTrackInfo:
         assert result.track_index == 1
         assert result.is_midi_track is True
         assert result.clip_slot_has_clip == [False, True]
+        assert result.is_foldable is False
+        assert result.fold_state is None
+        assert result.is_grouped is False
+        assert result.group_track_index is None
 
     async def test_returns_scoped_return_track_info(
         self, mock_context: MagicMock, mock_connection: AsyncMock
@@ -395,6 +456,8 @@ class TestGetTrackInfo:
         assert result.track_scope == "return"
         assert result.track_index == 1
         assert result.clip_slot_has_clip == []
+        assert result.is_foldable is False
+        assert result.fold_state is None
 
     async def test_returns_master_track_info(
         self, mock_context: MagicMock, mock_connection: AsyncMock
@@ -409,6 +472,21 @@ class TestGetTrackInfo:
         assert result.track_scope == "master"
         assert result.track_index is None
         assert result.clip_slot_has_clip == []
+        assert result.group_track_index is None
+
+    async def test_returns_group_metadata(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            GROUPED_TRACK_INFO_RESULT
+        )
+
+        result = await get_track_info(ctx=mock_context, track_index=2)
+
+        assert result.is_grouped is True
+        assert result.group_track_index == 1
+        assert result.is_foldable is False
+        assert result.fold_state is None
 
     async def test_sends_correct_command(
         self, mock_context: MagicMock, mock_connection: AsyncMock
@@ -611,6 +689,34 @@ class TestRoutingTools:
                 routing_type_identifier="Master",
                 routing_channel_identifier="Master/Stereo",
             )
+
+
+class TestFoldGroup:
+    async def test_sends_correct_command(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(TRACK_FOLD_RESULT)
+
+        result = await fold_group(ctx=mock_context, track_index=3, folded=True)
+
+        assert isinstance(result, TrackFoldResult)
+        assert result.track_index == 3
+        assert result.folded is True
+        req = mock_connection.send_command.call_args[0][0]
+        assert isinstance(req, CommandRequest)
+        assert req.command == "track.fold_group"
+        assert req.params == {"track_index": 3, "folded": True}
+
+    async def test_raises_invalid_params(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="Track 2 is not a foldable group track",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await fold_group(ctx=mock_context, track_index=2, folded=False)
 
 
 class TestCreateMidiTrack:

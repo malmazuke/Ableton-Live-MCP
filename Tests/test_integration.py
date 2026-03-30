@@ -374,6 +374,10 @@ class _TrackHandler:
                 "pan": 0.0,
                 "device_names": [],
                 "clip_slot_has_clip": [],
+                "is_foldable": False,
+                "fold_state": None,
+                "is_grouped": False,
+                "group_track_index": None,
             }
 
         track_index = params["track_index"]
@@ -391,6 +395,10 @@ class _TrackHandler:
                 "pan": -0.15,
                 "device_names": [],
                 "clip_slot_has_clip": [],
+                "is_foldable": False,
+                "fold_state": None,
+                "is_grouped": False,
+                "group_track_index": None,
             }
 
         return {
@@ -406,6 +414,16 @@ class _TrackHandler:
             "pan": 0.1,
             "device_names": ["Instrument Rack"],
             "clip_slot_has_clip": [False, True],
+            "is_foldable": False,
+            "fold_state": None,
+            "is_grouped": False,
+            "group_track_index": None,
+        }
+
+    def handle_fold_group(self, params):
+        return {
+            "track_index": params["track_index"],
+            "folded": params["folded"],
         }
 
     def handle_get_routing(self, params):
@@ -707,6 +725,8 @@ class TestFullRoundTrip:
         assert main_resp.status == "ok"
         assert main_resp.result["track_scope"] == "main"
         assert main_resp.result["track_index"] == 1
+        assert main_resp.result["is_foldable"] is False
+        assert main_resp.result["fold_state"] is None
         assert return_resp.status == "ok"
         assert return_resp.result["track_scope"] == "return"
         assert return_resp.result["clip_slot_has_clip"] == []
@@ -746,6 +766,25 @@ class TestFullRoundTrip:
         assert invalid_resp.status == "error"
         assert invalid_resp.error is not None
         assert invalid_resp.error.code == "INVALID_PARAMS"
+
+        await conn.disconnect()
+
+    async def test_fold_group_payload_via_tcp(self, tcp_server) -> None:
+        port, server, logs = tcp_server
+        conn = AbletonConnection(host="127.0.0.1", port=port, max_retries=1)
+        await conn.connect()
+
+        resp = await conn.send_command(
+            CommandRequest(
+                command="track.fold_group",
+                params={"track_index": 3, "folded": True},
+                id="track-fold-group",
+            )
+        )
+
+        assert resp.status == "ok"
+        assert resp.id == "track-fold-group"
+        assert resp.result == {"track_index": 3, "folded": True}
 
         await conn.disconnect()
 

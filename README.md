@@ -186,7 +186,7 @@ See the [project board](https://github.com/users/malmazuke/projects/1) for detai
 | Area | Examples |
 |------|----------|
 | Transport & session | Play, stop, record, set tempo, time signature, loop |
-| Tracks | Broader return/master mutation coverage, grouping, and fold operations |
+| Tracks | Broader return/master mutation coverage and existing group-track fold operations |
 | Arrangement clips | Create, move, import, and edit clips in arrangement view |
 | Session clips | Fire, stop, import, and manage clips in session view |
 | Devices & parameters | Load instruments/effects, read and tweak parameters |
