@@ -27,6 +27,7 @@ from mcp_ableton.tools.track import (
     TrackInputRoutingResult,
     TrackOutputRoutingResult,
     TrackRoutingInfo,
+    TrackUpdatedResult,
     create_audio_track,
     create_midi_track,
     delete_track,
@@ -77,6 +78,7 @@ def _error_response(
 
 TRACK_INFO_RESULT = {
     "name": "Midi 1",
+    "track_scope": "main",
     "track_index": 1,
     "is_audio_track": False,
     "is_midi_track": True,
@@ -87,6 +89,36 @@ TRACK_INFO_RESULT = {
     "pan": 0.0,
     "device_names": ["Instrument Rack"],
     "clip_slot_has_clip": [False, True],
+}
+
+RETURN_TRACK_INFO_RESULT = {
+    "name": "Return A",
+    "track_scope": "return",
+    "track_index": 1,
+    "is_audio_track": False,
+    "is_midi_track": False,
+    "mute": True,
+    "solo": False,
+    "arm": False,
+    "volume": 0.72,
+    "pan": -0.1,
+    "device_names": [],
+    "clip_slot_has_clip": [],
+}
+
+MASTER_TRACK_INFO_RESULT = {
+    "name": "Master",
+    "track_scope": "master",
+    "track_index": None,
+    "is_audio_track": False,
+    "is_midi_track": False,
+    "mute": False,
+    "solo": False,
+    "arm": False,
+    "volume": 0.88,
+    "pan": 0.0,
+    "device_names": [],
+    "clip_slot_has_clip": [],
 }
 
 ROUTING_OPTION_RESULT = {
@@ -178,6 +210,16 @@ TRACK_OUTPUT_ROUTING_RESULT = {
     },
 }
 
+TRACK_UPDATED_RESULT = {
+    "track_scope": "main",
+    "track_index": 1,
+}
+
+MASTER_TRACK_UPDATED_RESULT = {
+    "track_scope": "master",
+    "track_index": None,
+}
+
 
 class TestToolContracts:
     def _get_tool(self, name: str):
@@ -197,8 +239,11 @@ class TestToolContracts:
     def test_get_track_info_schema(self) -> None:
         tool = self._get_tool("get_track_info")
         props = tool.parameters["properties"]
+        assert props["track_scope"]["default"] == "main"
+        assert props["track_scope"]["enum"] == ["main", "return", "master"]
         assert "track_index" in props
-        assert props["track_index"]["minimum"] == 1
+        assert props["track_index"]["anyOf"][0]["minimum"] == 1
+        assert props["track_index"]["default"] is None
 
     def test_get_track_routing_schema(self) -> None:
         tool = self._get_tool("get_track_routing")
@@ -233,6 +278,21 @@ class TestToolContracts:
         tool = self._get_tool("create_audio_track")
         props = tool.parameters["properties"]
         assert props["index"]["default"] == -1
+
+    @pytest.mark.parametrize(
+        "tool_name",
+        [
+            "get_track_info",
+            "set_track_name",
+            "set_track_mute",
+            "set_track_solo",
+            "set_track_arm",
+        ],
+    )
+    def test_scoped_track_tools_have_track_scope_default(self, tool_name: str) -> None:
+        tool = self._get_tool(tool_name)
+        props = tool.parameters["properties"]
+        assert props["track_scope"]["default"] == "main"
 
 
 class TestInputValidation:
@@ -285,6 +345,24 @@ class TestInputValidation:
         with pytest.raises(ValidationError):
             model(track_index=1, name="")
 
+    def test_get_track_info_accepts_main_without_index(self) -> None:
+        model = self._arg_model("get_track_info")
+        args = model(track_scope="main")
+        assert args.track_scope == "main"
+        assert args.track_index is None
+
+    def test_get_track_info_accepts_return_without_index(self) -> None:
+        model = self._arg_model("get_track_info")
+        args = model(track_scope="return")
+        assert args.track_scope == "return"
+        assert args.track_index is None
+
+    def test_get_track_info_accepts_master_without_index(self) -> None:
+        model = self._arg_model("get_track_info")
+        args = model(track_scope="master")
+        assert args.track_scope == "master"
+        assert args.track_index is None
+
 
 class TestGetTrackInfo:
     async def test_returns_track_info(
@@ -300,6 +378,38 @@ class TestGetTrackInfo:
         assert result.is_midi_track is True
         assert result.clip_slot_has_clip == [False, True]
 
+    async def test_returns_scoped_return_track_info(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            RETURN_TRACK_INFO_RESULT
+        )
+
+        result = await get_track_info(
+            ctx=mock_context,
+            track_scope="return",
+            track_index=1,
+        )
+
+        assert isinstance(result, TrackInfo)
+        assert result.track_scope == "return"
+        assert result.track_index == 1
+        assert result.clip_slot_has_clip == []
+
+    async def test_returns_master_track_info(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            MASTER_TRACK_INFO_RESULT
+        )
+
+        result = await get_track_info(ctx=mock_context, track_scope="master")
+
+        assert isinstance(result, TrackInfo)
+        assert result.track_scope == "master"
+        assert result.track_index is None
+        assert result.clip_slot_has_clip == []
+
     async def test_sends_correct_command(
         self, mock_context: MagicMock, mock_connection: AsyncMock
     ) -> None:
@@ -309,7 +419,37 @@ class TestGetTrackInfo:
 
         req = mock_connection.send_command.call_args[0][0]
         assert req.command == "track.get_info"
-        assert req.params == {"track_index": 2}
+        assert req.params == {"track_scope": "main", "track_index": 2}
+
+    async def test_sends_scoped_command(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            RETURN_TRACK_INFO_RESULT
+        )
+
+        await get_track_info(
+            ctx=mock_context,
+            track_scope="return",
+            track_index=1,
+        )
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "track.get_info"
+        assert req.params == {"track_scope": "return", "track_index": 1}
+
+    async def test_sends_master_command_without_track_index(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            MASTER_TRACK_INFO_RESULT
+        )
+
+        await get_track_info(ctx=mock_context, track_scope="master")
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "track.get_info"
+        assert req.params == {"track_scope": "master"}
 
     async def test_raises_on_error(
         self, mock_context: MagicMock, mock_connection: AsyncMock
@@ -319,6 +459,29 @@ class TestGetTrackInfo:
         )
         with pytest.raises(CommandError, match="NOT_FOUND"):
             await get_track_info(ctx=mock_context, track_index=9)
+
+    async def test_rejects_master_track_index_before_sending(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        with pytest.raises(ValueError, match="track_index"):
+            await get_track_info(
+                ctx=mock_context,
+                track_scope="master",
+                track_index=1,
+            )
+
+        mock_connection.send_command.assert_not_called()
+
+    async def test_requires_track_index_for_main_and_return(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        with pytest.raises(ValueError, match="track_index"):
+            await get_track_info(ctx=mock_context, track_scope="main")
+
+        with pytest.raises(ValueError, match="track_index"):
+            await get_track_info(ctx=mock_context, track_scope="return")
+
+        mock_connection.send_command.assert_not_called()
 
 
 class TestRoutingTools:
@@ -528,45 +691,132 @@ class TestDeleteDuplicateSetters:
     async def test_set_track_name(
         self, mock_context: MagicMock, mock_connection: AsyncMock
     ) -> None:
-        mock_connection.send_command.return_value = _ok_response({"track_index": 1})
+        mock_connection.send_command.return_value = _ok_response(TRACK_UPDATED_RESULT)
 
         await set_track_name(ctx=mock_context, track_index=1, name="Lead")
 
         req = mock_connection.send_command.call_args[0][0]
         assert req.command == "track.set_name"
-        assert req.params == {"track_index": 1, "name": "Lead"}
+        assert req.params == {
+            "track_scope": "main",
+            "track_index": 1,
+            "name": "Lead",
+        }
+
+    async def test_set_track_name_scoped_master(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            MASTER_TRACK_UPDATED_RESULT
+        )
+
+        await set_track_name(ctx=mock_context, track_scope="master", name="Main")
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.command == "track.set_name"
+        assert req.params == {"track_scope": "master", "name": "Main"}
 
     async def test_set_track_mute(
         self, mock_context: MagicMock, mock_connection: AsyncMock
     ) -> None:
-        mock_connection.send_command.return_value = _ok_response({"track_index": 1})
+        mock_connection.send_command.return_value = _ok_response(TRACK_UPDATED_RESULT)
 
         await set_track_mute(ctx=mock_context, track_index=1, mute=True)
 
         req = mock_connection.send_command.call_args[0][0]
         assert req.command == "track.set_mute"
-        assert req.params == {"track_index": 1, "mute": True}
+        assert req.params == {
+            "track_scope": "main",
+            "track_index": 1,
+            "mute": True,
+        }
+
+    async def test_set_track_mute_scoped_return(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            RETURN_TRACK_INFO_RESULT
+        )
+
+        await set_track_mute(
+            ctx=mock_context,
+            track_scope="return",
+            track_index=1,
+            mute=True,
+        )
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.params == {
+            "track_scope": "return",
+            "track_index": 1,
+            "mute": True,
+        }
+
+    async def test_set_track_mute_raises_on_invalid_params(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _error_response(
+            code="INVALID_PARAMS",
+            message="Master track does not support mute",
+        )
+
+        with pytest.raises(CommandError, match="INVALID_PARAMS"):
+            await set_track_mute(ctx=mock_context, track_scope="master", mute=True)
 
     async def test_set_track_solo(
         self, mock_context: MagicMock, mock_connection: AsyncMock
     ) -> None:
-        mock_connection.send_command.return_value = _ok_response({"track_index": 2})
+        mock_connection.send_command.return_value = _ok_response(TRACK_UPDATED_RESULT)
 
         await set_track_solo(ctx=mock_context, track_index=2, solo=False)
 
         req = mock_connection.send_command.call_args[0][0]
         assert req.command == "track.set_solo"
+        assert req.params == {
+            "track_scope": "main",
+            "track_index": 2,
+            "solo": False,
+        }
+
+    async def test_set_track_solo_scoped_master(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        mock_connection.send_command.return_value = _ok_response(
+            MASTER_TRACK_UPDATED_RESULT
+        )
+
+        await set_track_solo(ctx=mock_context, track_scope="master", solo=False)
+
+        req = mock_connection.send_command.call_args[0][0]
+        assert req.params == {"track_scope": "master", "solo": False}
 
     async def test_set_track_arm(
         self, mock_context: MagicMock, mock_connection: AsyncMock
     ) -> None:
-        mock_connection.send_command.return_value = _ok_response({"track_index": 1})
+        mock_connection.send_command.return_value = _ok_response(TRACK_UPDATED_RESULT)
 
         await set_track_arm(ctx=mock_context, track_index=1, arm=True)
 
         req = mock_connection.send_command.call_args[0][0]
         assert req.command == "track.set_arm"
-        assert req.params == {"track_index": 1, "arm": True}
+        assert req.params == {
+            "track_scope": "main",
+            "track_index": 1,
+            "arm": True,
+        }
+
+    async def test_set_track_arm_rejects_master_before_sending(
+        self, mock_context: MagicMock, mock_connection: AsyncMock
+    ) -> None:
+        with pytest.raises(ValueError, match="track_index"):
+            await set_track_arm(
+                ctx=mock_context,
+                track_scope="master",
+                track_index=1,
+                arm=True,
+            )
+
+        mock_connection.send_command.assert_not_called()
 
 
 class TestResponseModels:
@@ -577,6 +827,23 @@ class TestResponseModels:
     def test_track_info_accepts_valid(self) -> None:
         t = TrackInfo.model_validate(TRACK_INFO_RESULT)
         assert t.device_names == ["Instrument Rack"]
+        assert t.track_scope == "main"
+        assert t.track_index == 1
+
+    def test_track_info_accepts_master(self) -> None:
+        t = TrackInfo.model_validate(MASTER_TRACK_INFO_RESULT)
+        assert t.track_scope == "master"
+        assert t.track_index is None
+
+    def test_track_updated_result_accepts_valid(self) -> None:
+        result = TrackUpdatedResult.model_validate(TRACK_UPDATED_RESULT)
+        assert result.track_scope == "main"
+        assert result.track_index == 1
+
+    def test_track_updated_result_accepts_master(self) -> None:
+        result = TrackUpdatedResult.model_validate(MASTER_TRACK_UPDATED_RESULT)
+        assert result.track_scope == "master"
+        assert result.track_index is None
 
     def test_routing_option_accepts_valid(self) -> None:
         option = RoutingOption.model_validate(ROUTING_OPTION_RESULT)

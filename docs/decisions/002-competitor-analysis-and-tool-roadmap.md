@@ -27,9 +27,9 @@ The original and most popular. Every tool follows the same pattern: `@mcp.tool()
 | Tool | Parameters | Notes |
 |------|-----------|-------|
 | `get_session_info` | — | Tempo, time sig, track count, master vol/pan |
-| `get_track_info` | `track_index: int` | Name, mute/solo/arm, vol/pan, clip slots, devices |
+| `get_track_info` | `track_scope: "main"|"return"|"master", track_index: int \| None` | Name, mute/solo/arm, vol/pan, clip slots, devices |
 | `create_midi_track` | `index: int = -1` | At position or end |
-| `set_track_name` | `track_index, name` | |
+| `set_track_name` | `track_scope, track_index?, name` | |
 | `create_clip` | `track_index, clip_index, length=4.0` | Session clips only |
 | `add_notes_to_clip` | `track_index, clip_index, notes: List[Dict]` | pitch/start_time/duration/velocity/mute |
 | `set_clip_name` | `track_index, clip_index, name` | |
@@ -299,15 +299,18 @@ These tools match or exceed the original ahujasid feature set, add arrangement v
 
 | Tool | Parameters | Returns | LOM Calls |
 |------|-----------|---------|-----------|
-| `get_track_info` | `track_index: int` | `TrackInfo` (name, type, mute, solo, arm, volume, pan, devices, clip_slots) | `song.tracks[i].*` |
+| `get_track_info` | `track_scope: "main"|"return"|"master", track_index: int \| None` | `TrackInfo` (scope, index, name, type, mute, solo, arm, volume, pan, devices, clip_slots) | `song.tracks[i].*`, `song.return_tracks[i].*`, `song.master_track` |
 | `create_midi_track` | `index: int = -1, name: str = None` | `TrackCreatedResult` | `song.create_midi_track(index)` |
 | `create_audio_track` | `index: int = -1, name: str = None` | `TrackCreatedResult` | `song.create_audio_track(index)` |
 | `delete_track` | `track_index: int` | `TrackDeletedResult` | `song.delete_track(index)` |
 | `duplicate_track` | `track_index: int` | `TrackDuplicatedResult` | `song.duplicate_track(index)` |
-| `set_track_name` | `track_index: int, name: str` | `TrackUpdatedResult` | `track.name = name` |
-| `set_track_mute` | `track_index: int, mute: bool` | `TrackUpdatedResult` | `track.mute = mute` |
-| `set_track_solo` | `track_index: int, solo: bool` | `TrackUpdatedResult` | `track.solo = solo` |
-| `set_track_arm` | `track_index: int, arm: bool` | `TrackUpdatedResult` | `track.arm = arm` |
+| `set_track_name` | `track_scope: "main"|"return"|"master", track_index: int \| None, name: str` | `TrackUpdatedResult` | `track.name = name` when supported |
+| `set_track_mute` | `track_scope: "main"|"return"|"master", track_index: int \| None, mute: bool` | `TrackUpdatedResult` | `track.mute = mute` when supported |
+| `set_track_solo` | `track_scope: "main"|"return"|"master", track_index: int \| None, solo: bool` | `TrackUpdatedResult` | `track.solo = solo` when supported |
+| `set_track_arm` | `track_scope: "main"|"return"|"master", track_index: int \| None, arm: bool` | `TrackUpdatedResult` | `track.arm = arm` for armable tracks only |
+
+`track_scope="master"` always uses `track_index=None`; `main` and `return`
+remain 1-based and require a concrete `track_index`.
 
 #### Clip Operations (7 tools)
 
